@@ -1,0 +1,28 @@
+{
+  "repository": "ThamalDilanka/easy-sso",
+  "targets": [
+    "linux-amd64",
+    "linux-arm64",
+    "darwin-amd64",
+    "darwin-arm64",
+    "windows-amd64"
+  ],
+  "documents": [
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "docs/USAGE.md",
+    "docs/ARCHITECTURE.md",
+    "docs/VALIDATION.md",
+    "docs/DISTRIBUTION.md",
+    "spec/connections.schema.json"
+  ],
+  "archive_pattern": "easy-sso-{version}-{target}",
+  "archive_extensions": {
+    "linux": ".tar.gz",
+    "darwin": ".tar.gz",
+    "windows": ".zip"
+  },
+  "version_pattern": "^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?(?:\\+([0-9A-Za-z.-]+))?$"
+}
