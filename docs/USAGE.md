@@ -1,0 +1,94 @@
+# Using easy-sso
+
+## Installation and updates
+
+See [Distribution](DISTRIBUTION.md) for direct installation, checksum verification, package-manager candidates, versioned Go installation, and uninstall instructions. Use `easysso update --check` to check deliberately and `easysso update` to install a newer compatible release from a recorded direct Unix installation. Add `--prerelease` to opt into prereleases. Close apps/helpers before replacing their executable. Updates preserve AWS files and application state. Native Windows uses manual replacement; no automatic checks run in the workspace.
+
+## Build and run
+
+Use Go **1.27.2 or newer**, with exact dependency versions and checksums in `go.mod` and `go.sum`.
+
+```sh
+make build
+./bin/easysso version
+./bin/easysso diagnostics
+./bin/easysso
+```
+
+Install AWS CLI v2, the official Session Manager plugin, separately (Windows native execution also needs a supported terminal). Configure your SSO sources with the official AWS CLI before running the app. Missing prerequisites leave bookmark browsing and backup available and disable dependent actions. Diagnostics checks executable versions and reads profile definitions; it does not authenticate or call AWS services.
+
+```sh
+./bin/easysso --state-dir /private/path/easy-sso
+./bin/easysso --aws-config /path/config --credentials-file /private/path/credentials
+./bin/easysso --aws-cli /path/to/aws
+```
+
+The Go module is `github.com/ThamalDilanka/easy-sso`. The command and its source directory are `easysso` (`cmd/easysso`); the product name `easy-sso` is used for the SSM reason prefix, workspace title, configuration directory, and `EASY_SSO_*` environment variables. Defaults honor `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE`, the current runtime's home, and `os.UserConfigDir()/easy-sso`. Explicit path overrides do not move AWS CLI SSO caches. Existing application/credential directories on Unix must be owned by the current user and private (0700); exported credential files must be 0600. Unsafe paths and symlinks are rejected. Windows uses a protected DACL restricted to the current user; native execution remains a verification gate.
+
+Profiles, account IDs, roles, source chains, SSO session names and login configuration come from the selected AWS config. The app rereads it every two seconds while idle; `Ctrl+R` requests an immediate reload. It preserves the selected profile by name, invalidates pending profile approvals when definitions change, and blocks unavailable profiles without inventing missing definitions. Existing sessions keep their frozen identities. Region suggestions come from the profile, inherited source, or configured SSO region. Account labels default to the account ID and change only through explicit saved user labels. EC2 instance IDs and database endpoints are entered as connection bookmarks because AWS profile configuration does not contain these resource targets.
+
+WSL runs the Linux executable, CLI, plugin, home, and credentials. The terminal launcher pins the current distribution/user. It does not switch to Windows AWS credentials. Linux, WSL and macOS use an embedded PTY terminal, with no desktop terminal launcher required. Native Windows retains the external terminal adapter.
+
+Sign-in uses the official CLI device-code flow (`--use-device-code --no-browser`). The app displays the sign-in URL and code without opening a browser automatically. Click the link or **Open browser (o)** to open your default browser (the Windows browser on WSL), or press **c** to copy the URL; the app confirms when copying succeeds. Complete sign-in in your preferred browser. Only temporary role credentials are published after identity verification and successful SSO cache cleanup; broad SSO tokens are cleared automatically, including after cancellation or failure. Initial AWS profile configuration is still required.
+
+## Terminal appearance
+
+The workspace has a persistent source/account/profile sidebar, identity header beside it, six compact views, subtle separators, and blue selection. Click account headings to expand or collapse them without changing identity; click a profile to select it. The selected account also expands automatically during keyboard navigation. Tab cycles Accounts → EC2 → Databases → Accounts. Keys 3–6 open Sessions, Tunnels, Credentials, and Backup directly; they are outside the Tab cycle. EC2 and Databases sit on the left of the view strip, with the other views aligned right; selected views have an underline. At 80–99 columns, the Accounts step opens the account picker; the identity header remains visible during review. The light theme is the default. Click the theme hint in the footer or press Ctrl+T to switch; the choice is saved with local settings. EASY_SSO_THEME=dark or light overrides the saved preference at startup. NO_COLOR and EASY_SSO_ASCII remain supported.
+
+If your shell exports `NO_COLOR` (even an empty value), the application respects it. To enable colors for one run on Linux/macOS:
+
+```sh
+env -u NO_COLOR TERM=xterm-256color ./bin/easysso
+env -u NO_COLOR TERM=xterm-256color EASY_SSO_THEME=light ./bin/easysso
+```
+
+Development screenshots and terminal recordings stay local under the ignored `docs/screenshots/` directory. External window focus remains adapter-dependent; see [release validation](VALIDATION.md) for live AWS qualification requirements.
+
+## Use
+
+1. Select a profile with `Tab` and the arrow keys. The header shows the exact destination account, role, partition and SSO source, including a role chain.
+2. Select a profile and click **Log in (Ctrl+A)** on the right side of the account header, or press `Ctrl+A`. Plain `a` does not trigger login or logout. When the selected profile has active keys, this becomes **Log out (Ctrl+A)**; confirmation removes that profile’s managed keys while existing shells and tunnels remain open. Complete sign-in using the displayed link or copy it with `c`. The app keeps only that profile’s temporary role credentials and automatically clears AWS CLI SSO caches. `Shift+A` opens advanced selection of multiple roles and credential aliases. Renew explicitly from Credentials; no refreshable SSO authorization is retained by this tool.
+3. Use `1` for EC2 or `2` for Databases. Resource tables have numbered rows, extra spacing and full-row selection highlights. In EC2 and Databases, selected connection details appear above the action buttons. Connect and EC2 New window come first, with Edit and Details aligned right; narrow layouts wrap these groups. New connection sits at the right of the section heading. Press `n` to enter a new connection, review full identity and regions, then confirm. New bookmarks are saved only after confirmed SSM/listener readiness; PostgreSQL IAM bookmarks additionally require an authenticated client prompt.
+4. For databases, enter the remote endpoint/port, database region, relay EC2 instance and its SSM region, and local port. New connections default to `postgres-iam`: add the database name and database username, then choose **Connect terminal (Enter)**. The app opens or reuses an owned tunnel and signs into an embedded `psql` terminal using the selected role. Choose `tunnel` for transport only; existing bookmarks retain that behavior until edited. `Enter` connects directly from the saved list; `v` opens the full route and login details without connecting.
+5. Use `3` for Sessions and `4` for Tunnels. Both list newest runs first; Sessions shows the latest 50 records and Tunnels keeps all records available. The selected run and bound profile stay above the table. `v` opens its full details at the top; `Esc` returns to the same list position. `Enter` focuses an existing terminal when available, otherwise opens the record details. `d` opens a targeted disconnect/stop review and `r` rechecks uncertain status. In EC2, **Connect terminal (Enter)** opens or focuses a named easy-sso tab alongside **[AWS] easy-sso**. While a new connection opens, the Connect terminal button shows an amber spinner, blocks repeat clicks, and keeps Cancel available. Click a tab or use **Shift+Tab** to switch; **Ctrl+]** returns to the AWS workspace with its account, view and server selection preserved. Each shell retains its screen and incomplete input independently of the selected profile. The tab strip has two rows of height; long strips scroll to keep the selected tab visible. Shell tabs show the tab strip, terminal area and keyboard shortcuts; failed startups also show a clear error banner. **Ctrl+W**, **Alt+W**, or the tab close button disconnects and closes the selected local shell. If local cleanup fails, its tab stays available with an error. Use shell `exit` or Sessions → Disconnect to end it. **New window (w)** explicitly starts an additional shell in a separate terminal window. **Details (v)** retains the full review and New shell action.
+6. Use `5` for Credentials, with an aligned alias/account/status/remaining-time table and full details for the selected row. Expiry countdowns update every second using Bubbles timers; dates use readable local time. Use `r` to renew, `d` to remove, and `c` to retry incomplete SSO cleanup. Removal deletes owned local material; it does not revoke credential copies or established runs.
+7. Use `6` for Backup. `e` exports to a **new** file path. Existing files and reserved AWS/application paths are protected from overwrite. `i` validates an import, previews additions/conflicts, and preserves local records by default; replacement is explicit. Missing profile hints are marked as needing rebinding; select and review a valid matching account/role before connecting.
+8. `q` or `Ctrl+C` opens exit review. Normal exit disconnects embedded shells and stops owned DB tunnels; external window shells remain independent. While a terminal tab is selected, keys including Ctrl+C go to the shell, except the reserved tab shortcuts above; use Ctrl+] before workspace shortcuts. Embedded shells belong to this app process and cannot survive its exit.
+
+Mouse clicks work on view tabs, account/profile rows, saved resources, action buttons, fields, role checkboxes, and cleanup acknowledgements. The wheel scrolls the panel under the pointer. Clicking a resource selects it; Enter connects the selected EC2 or database bookmark. Use v to open details separately. Mouse release and drag events never submit an action. All keyboard controls remain available.
+
+`y` edits the selected account's local display label. Labels are never IAM identity. Use `NO_COLOR=1`, `EASY_SSO_ASCII=1`, and `EASY_SSO_THEME=light` for terminal preferences. `?` opens categorized Key / Action tables covering navigation, accounts, every view, forms, terminal tabs, sign-in, and exit. Use PgUp/PgDn to scroll and ?/Esc to close Help before using workspace shortcuts; `Ctrl+Left`/`Ctrl+Right` cycles through the six views (outside forms and reviews); `Tab` cycles Accounts, EC2, and Databases; form `Ctrl+U` clears a field.
+
+Shift+Tab cycles forward through the top-level tabs and wraps back to AWS after the last shell. There is no previous-tab shortcut. In forms, Tab or Down moves to the next field and Up moves to the previous field.
+
+## Session lifecycle
+
+Independent helpers retain credentials in memory and advertise private, authenticated control endpoints. Sessions shows the latest 50 records, newest first, rather than only open terminal tabs. The limit applies to the displayed list; runtime history is retained. For the shown records, active, unverified, and history counts are separate, and each row identifies an open or unlisted local tab, history, or no local tab. Start times are fixed local dates/times; active rows are green and ended rows are gray. Runtime records currently have no automatic expiry. A restarted TUI preserves Ended/Failed shell history and its diagnostics; stale nonterminal helpers display Unverified. Recovery never kills a recovered PID. Lost transport is not automatically reconnected. A recovered tunnel candidate needs independent process/AWS verification; no blind orphan kill occurs. `RemoteEnded` distinguishes confirmed remote termination from local process cleanup. Retain the runtime metadata for manual investigation when termination cannot be confirmed.
+
+The cache cleanup boundary is the current official CLI environment. Already-issued role credentials, same-user copies, unrelated credential files, browser/IDE/SDK stores, and other Windows/WSL environments remain outside it. This application is not an OS isolation boundary and does not narrow IAM permissions.
+
+Exit uses a standalone confirmation when local shells, owned tunnels, confirmed external shells, or saved managed credentials are present. Only relevant counts are shown. History and unverified external records do not count as open shells. With nothing to warn about, `q` runs normal cleanup and exits immediately. **Exit (Enter)** keeps saved credentials; **Clear creds & exit (c)** removes easy-sso managed credentials after session cleanup, and **Cancel (Esc)** returns to the workspace. Clearing uses ownership checks and does not revoke copied credentials or sign out independent external shells. Cleanup failures keep the confirmation open with an error.
+
+Press `?` in the workspace for the contextual shortcut reference.
+
+A rejected SSM shell startup is recorded as Failed. AccessDeniedException is shown as an access-denied explanation for ssm:StartSession on the instance/session document; raw AWS diagnostics remain in the terminal and are not copied into runtime metadata. Closing a failed tab releases its local terminal without attempting to terminate an unconfirmed remote session.
+
+Saved EC2 and database connections support **Edit (`e`)** from the list or connection review. Edit any connection field, then press `Ctrl+S` (or Enter on the final field) to save without connecting. `Esc` discards edits. Account ownership stays fixed, and open sessions retain their original route. The database endpoint is a hostname only, separate from the display name.
+
+## PostgreSQL IAM terminals
+
+Install `psql` alongside the AWS CLI and Session Manager plugin. PostgreSQL terminals use app-owned PTYs on Linux, WSL, and macOS; native Windows currently supports tunnel-only database access. Select **Set up IAM (l)** on a tunnel-only bookmark, provide the **database name** and **database username**, then save with Ctrl+S and choose Connect terminal (Enter). The full editor (`e`) also exposes the authentication mode. Neither is inferred from the SSO role.
+
+The database must already have IAM authentication enabled, the database user must have `rds_iam` and appropriate SQL grants, and the selected AWS role must allow `rds-db:connect` for that database resource and user. AWS read-only permissions do not determine SQL permissions. The app does not enable IAM authentication or change grants. Tunnel-only success explicitly says database login was not attempted. The Databases view shows the profile bound to an open tunnel, even after another profile is selected. SSM access-denied failures name the relay/session-document permission and do not imply database login succeeded. See [AWS PostgreSQL IAM prerequisites](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.PostgreSQL.html).
+
+**Waiting for IAM setup?** Choose **Edit (e)**, set **Auth** to `tunnel`, and save with Ctrl+S. Enter then opens the tunnel for a database client using an existing database login. **Set up IAM (l)** only saves connection settings; an administrator must configure the RDS setting, database user/grants, and SSO role permission for the exact DB resource ID and username. An authentication rejection lists these checks because the PostgreSQL error does not identify which prerequisite is missing.
+
+Connect terminal uses the selected role's frozen temporary credentials to generate a fresh token for the real RDS hostname, database port, and DB region. `psql` receives the token only through its child environment; bookmarks, command arguments, runtime metadata, and error messages contain no token. Client history is disabled and the token is redacted from rendered output. Tokens last 15 minutes for initial authentication; reconnect using Connect terminal to generate a new one. The app marks the run Connected only after `psql` emits its authenticated interactive prompt, and setup failures retain useful terminal output.
+
+TLS uses `verify-full`, the real endpoint as `host`, and `127.0.0.1` as `hostaddr` with the local tunnel port. Leave **RDS CA file** blank to download and cache the official public AWS bundle (commercial/GovCloud partitions, refreshed after 24 hours), or supply an existing PEM bundle for offline access. China partitions require an explicit bundle. A custom path may need changing after bookmark import on another machine. See [libpq host/hostaddr](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-HOSTADDR) and [AWS RDS CA bundles](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html).
+
+Repeated Connect focuses the existing authenticated client when route, database user/name, and frozen AWS identity match. Only a listener verified as owned by this workspace can be reused. Different identities and externally opened tunnels require another local port or explicit cleanup. Recovered registrations never transfer process ownership and do not reserve an otherwise free local port. One client attaches per tunnel. Closing the terminal or entering `\q` stops a tunnel created for it; a separately opened tunnel stays available. **Tunnels → Stop** and workspace exit stop both owned transport and its client. Remote termination failures remain explicitly unconfirmed.
+
+Validation uses fake AWS calls and a real local `psql`/TLS protocol fixture. This does not establish live RDS IAM permissions or production login readiness.
+
+After a restart, Tunnels automatically checks older records using their original managed profile. Closed sessions become stopped history. **Remote active** means AWS verified the saved session; **Stop (d)** terminates that exact session. **Needs login** names the original profile to renew; **Check failed** explains an identity, permission or network problem; **Port in use** means local listener cleanup still needs checking. Use **Recheck (r)** to retry immediately. Recovery does not reconnect, restore terminal screens or kill processes by saved PID.
