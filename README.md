@@ -4,7 +4,9 @@
 
 Sign in to AWS, choose a role, and open an EC2 shell or PostgreSQL session from a keyboard-and-mouse terminal app. Save connections, see which identity each session uses, and manage shells and database tunnels in one place.
 
-![easy-sso terminal workspace showing the account and profile sidebar, active credentials, saved EC2 connections, and connection actions](docs/images/terminal-ui.png)
+[![easy-sso terminal workspace showing the account and profile sidebar, active credentials, saved EC2 connections, and connection actions](docs/images/terminal-ui.png)](https://thamaldilanka.github.io/easy-sso/)
+
+_Click the screenshot to open the interactive demo._
 
 - Switch between configured AWS accounts and roles, with identity and credential expiry visible.
 - Reconnect to saved EC2 instances through AWS Systems Manager Session Manager.
@@ -15,14 +17,10 @@ Built on the official **AWS CLI v2** and **Session Manager plugin**, with no bac
 
 [Motivation](#motivation) · [Install](#install) · [First run](#first-run) · [Credential security](#credential-security) · [Updates](#updates) · [Usage guide](docs/USAGE.md)
 
-**[Try the offline browser demo](https://thamaldilanka.github.io/easy-sso/)** — it
-opens directly in your browser. You can also download the single HTML file,
-[`docs/demo/easy-sso-demo.html`](docs/demo/easy-sso-demo.html), and open it locally;
-from a checkout, run `make demo` or double-click that file.
-
-The [demo guide](docs/demo/README.md) covers its interactive, fictional workflows.
-Everything runs inside that one file: no server, installation, credentials, or
-network requests. Changes last only until reset/reload.
+**[Try the browser demo](https://thamaldilanka.github.io/easy-sso/)** — a simulation of
+the workspace with fictional data. It runs entirely in your browser: no installation,
+credentials, or network requests. The [demo guide](docs/demo/README.md) covers its
+interactive workflows.
 
 ## Motivation
 
