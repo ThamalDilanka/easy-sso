@@ -1,6 +1,6 @@
 # Installation, updates, and release operations
 
-Version 1 uses the `v1.0.0` tag. Releases are published on GitHub; downloading needs no account or token. The release workflow creates **drafts only**, which the maintainer reviews before publication. Cross-built macOS/Windows packages still require native qualification. AWS CLI v2, Session Manager plugin, and optional `psql` must be installed separately.
+Releases are published on GitHub as `v<version>` tags; downloading needs no account or token. The release workflow creates **drafts only**, which the maintainer reviews before publication. Cross-built macOS/Windows packages still require native qualification. AWS CLI v2, Session Manager plugin, and optional `psql` must be installed separately.
 
 ## Direct installation
 
@@ -35,10 +35,10 @@ All requests use bounded sizes, timeouts, HTTPS, and the fixed canonical GitHub 
 
 ## Source and package managers
 
-For the version 1 release:
+Install the latest tagged release from source, or replace `latest` with a specific tag such as `v1.0.0` to pin one:
 
 ```sh
-go install github.com/ThamalDilanka/easy-sso/cmd/easysso@v1.0.0
+go install github.com/ThamalDilanka/easy-sso/cmd/easysso@latest
 ```
 
 `version` uses Go module build metadata when release linker flags are absent. Go installations receive a versioned `go install` command from `easysso update --check` instead of in-place replacement; `EASY_SSO_GITHUB_TOKEN` only affects the updater's GitHub requests.

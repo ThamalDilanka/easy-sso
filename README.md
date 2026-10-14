@@ -24,29 +24,13 @@ interactive workflows.
 
 ## Motivation
 
-easy-sso grew out of two recurring problems: rebuilding connection commands and keeping the access available on a workstation aligned with the task at hand. Giving coding agents access to that workstation makes the second problem more important.
-
-AWS Well-Architected guidance recommends Session Manager for administrative EC2 access. It avoids opening inbound SSH/RDP ports and managing SSH keys. This is the basis for easy-sso's EC2 connection workflow. See [AWS access guidance](https://docs.aws.amazon.com/wellarchitected/latest/framework/sec_incident_response_pre_provision_access.html) and the [Session Manager overview](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html).
-
-> **Connection bookmarks**
+> **Why easy-sso exists**
 >
-> Finding an instance in the console, copying its ID, and rebuilding commands led to separate notes and shell snippets. AWS's [CLI connection workflow](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html) needs a target ID; database forwarding also needs a relay, endpoint, and ports. Console lookup is optional.
+> 1. **Connection bookmarks.** Session Manager needs a target ID; database forwarding also needs a relay, endpoint, and ports. Rebuilding those commands by hand leads to scattered notes and shell snippets. easy-sso keeps them as named bookmarks and rebuilds the commands, following [AWS guidance](https://docs.aws.amazon.com/wellarchitected/latest/framework/sec_incident_response_pre_provision_access.html) to use Session Manager instead of inbound SSH/RDP.
+> 2. **Explicit role activation.** One SSO session can unlock every role you hold: selecting a ReadOnly profile does not stop the AWS CLI from obtaining credentials for an Admin role through another profile ([SSO session reuse](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html)). easy-sso verifies the selected role, then runs `aws sso logout` before publishing its credentials.
+> 3. **Agent credential exposure.** A coding agent with shell and credential-file access can use any cached credential, not only the default profile. Clearing cached SSO authorization after activation narrows what is left available to local tools.
 >
-> easy-sso saves named bookmarks and builds repeat connection commands. You supply and maintain destinations. Database access still requires network reachability, authentication, and appropriate TLS configuration.
-
-> **Explicit role activation**
->
-> ReadOnly and Admin profiles can share a valid SSO session. Selecting ReadOnly does not prevent obtaining credentials for an already-assigned Admin role through another profile. AWS documents [SSO session reuse](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) and how [`--profile` overrides `AWS_PROFILE`](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html#cli-configure-files-using-profiles).
->
-> easy-sso verifies selected role credentials and runs `aws sso logout` before publishing managed aliases. AWS's [logout operation](https://docs.aws.amazon.com/cli/latest/reference/sso/logout.html) clears cached SSO tokens and SSO role credentials across all profiles. Renewal is explicit; running connections retain their original credential snapshot.
-
-> **Agent credential exposure**
->
-> The [Agent Toolkit for AWS](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/what-is-agent-toolkit.html) supports [profile allowlists and single-role OAuth sessions](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/multi-account-access.html). Our concern is an agent that also has local shell and credential-file access: the CLI behavior above implies that a default profile alone cannot constrain every credential it can use.
->
-> easy-sso clears cached SSO authorization after activation, reducing the access left available to local tools.
-
-easy-sso reduces cached SSO access left available after activation, but **does not sandbox agents or enforce exclusive access to one role**. Other credentials, including previously activated aliases, can remain available; copied credentials and existing sessions are not revoked. Enforcing an agent's access requires least-privilege IAM permissions and an execution environment that exposes only the intended credentials. See [credential security](#credential-security) for the implementation and limits.
+> easy-sso **does not sandbox agents or enforce exclusive access to one role**: copied credentials and existing sessions are not revoked. Least-privilege IAM permissions and an execution environment that exposes only the intended credentials remain your responsibility. See [credential security](#credential-security) for the implementation and limits.
 
 ## Install
 
@@ -58,26 +42,26 @@ For WSL, install these tools inside your Linux distribution. Native Windows uses
 
 You do not need Go, Make, or a source checkout to install a release.
 
-### 2. Download version 1.0.0
+### 2. Download the latest release
 
-Open the [v1.0.0 release](https://github.com/ThamalDilanka/easy-sso/releases/tag/v1.0.0). Download **one archive** from the table and **`SHA256SUMS`** from the same release into the same folder.
+Open the [latest release](https://github.com/ThamalDilanka/easy-sso/releases/latest). Download **one archive** from the table and **`SHA256SUMS`** from the same release into the same folder. `<version>` is the release number shown on that page.
 
 | Your system | Archive |
 | --- | --- |
-| Linux / WSL, Intel or AMD 64-bit (`x86_64`) | `easy-sso-1.0.0-linux-amd64.tar.gz` |
-| Linux / WSL, ARM 64-bit (`aarch64` / `arm64`) | `easy-sso-1.0.0-linux-arm64.tar.gz` |
-| macOS, Apple Silicon | `easy-sso-1.0.0-darwin-arm64.tar.gz` |
-| macOS, Intel | `easy-sso-1.0.0-darwin-amd64.tar.gz` |
-| Windows, Intel or AMD 64-bit | `easy-sso-1.0.0-windows-amd64.zip` |
+| Linux / WSL, Intel or AMD 64-bit (`x86_64`) | `easy-sso-<version>-linux-amd64.tar.gz` |
+| Linux / WSL, ARM 64-bit (`aarch64` / `arm64`) | `easy-sso-<version>-linux-arm64.tar.gz` |
+| macOS, Apple Silicon | `easy-sso-<version>-darwin-arm64.tar.gz` |
+| macOS, Intel | `easy-sso-<version>-darwin-amd64.tar.gz` |
+| Windows, Intel or AMD 64-bit | `easy-sso-<version>-windows-amd64.zip` |
 
 On Linux, WSL, or macOS, `uname -m` shows the architecture of your current environment. Linux amd64 has been tested; macOS and Windows packages are cross-built with native qualification pending. See [platform status](#platform-status) before testing.
 
-If you already use the optional GitHub CLI, you can download instead with the following example. Change the archive name to match your system:
+If you already use the optional GitHub CLI, you can download the latest release instead with the following example. Change the pattern to match your system:
 
 ```sh
 gh auth login --hostname github.com
-gh release download v1.0.0 --repo ThamalDilanka/easy-sso \
-  --pattern 'easy-sso-1.0.0-linux-amd64.tar.gz' --pattern 'SHA256SUMS'
+gh release download --repo ThamalDilanka/easy-sso \
+  --pattern 'easy-sso-*-linux-amd64.tar.gz' --pattern 'SHA256SUMS'
 ```
 
 GitHub CLI is only a download convenience, not an AWS or easy-sso prerequisite. Hosted Homebrew and Scoop installation channels are not available yet.
@@ -86,10 +70,10 @@ GitHub CLI is only a download convenience, not an AWS or easy-sso prerequisite. 
 
 #### Linux, WSL, and macOS
 
-Open a terminal in the download folder. Set `archive` to the exact file you downloaded:
+Open a terminal in the download folder. The first line picks up the archive you downloaded (keep only one archive in the folder, and change `linux-amd64` to match your system):
 
 ```sh
-archive=easy-sso-1.0.0-linux-amd64.tar.gz
+archive=$(ls easy-sso-*-linux-amd64.tar.gz)
 
 # Linux / WSL:
 sha256sum "$archive"
@@ -115,10 +99,10 @@ Add the same `export PATH="$HOME/.local/lib/easy-sso:$PATH"` line to your shell 
 
 #### Windows (PowerShell)
 
-Open PowerShell in the download folder and compare the hash with the archive's entry in `SHA256SUMS`:
+Open PowerShell in the download folder. The first line picks up the archive you downloaded (keep only one archive in the folder). Compare the hash with the archive's entry in `SHA256SUMS`:
 
 ```powershell
-$archive = 'easy-sso-1.0.0-windows-amd64.zip'
+$archive = (Get-Item 'easy-sso-*-windows-amd64.zip').Name
 Get-FileHash $archive -Algorithm SHA256
 Select-String -Path .\SHA256SUMS -SimpleMatch $archive
 ```
