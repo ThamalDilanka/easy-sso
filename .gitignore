@@ -1,0 +1,19 @@
+/bin/
+/coverage.out
+/test-results.json
+/test-results.txt
+
+# Local runtime data and development captures.
+/.aws/
+/.easy-sso/
+/.env
+/.env.*
+/docs/screenshots/
+*.ansi
+*.log
+__pycache__/
+*.pyc
+
+# Local agent plans, notes and design scratch.
+/.claude/
+/design/
