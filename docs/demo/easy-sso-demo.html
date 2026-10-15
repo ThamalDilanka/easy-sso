@@ -1839,7 +1839,7 @@
             note("Recheck status complete. (Simulated)");
           return;
         }
-        if (key === "c" && state.view === 4)
+        if (key === "R" && state.view === 4)
           return operate("Retry cleanup", () => {
             state.cleanup = false;
             state.notice =
@@ -2138,7 +2138,7 @@
             ["Enter / v", "Focus terminal or show details."],
             ["d", "Review stop or credential removal."],
             ["r", "Recheck a run or renew a credential."],
-            ["c", "In Credentials: retry simulated SSO cleanup."],
+            ["R", "In Credentials: retry simulated SSO cleanup."],
           ],
         ],
         [
@@ -2312,7 +2312,7 @@
                     button("Remove", "d", "danger") +
                     button("Details", "v")
                 : "",
-              button("Retry cleanup", "c"),
+              button("Retry cleanup", "R"),
             );
           if (!list.length)
             return (

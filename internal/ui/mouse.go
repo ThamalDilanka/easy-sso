@@ -227,7 +227,7 @@ func (m *Model) controls() []control {
 			if pause, ok := pauseControl(m.review.role); ok {
 				c = append(c, pause)
 			}
-			return append(c, control{"Copy profile", "y"}, control{"Back", "esc"})
+			return append(c, control{"Copy profile", "c"}, control{"Back", "esc"})
 		default:
 			return []control{{"Confirm", "enter"}, {"Cancel", "esc"}}
 		}
@@ -272,10 +272,10 @@ func (m *Model) controls() []control {
 				if pause, ok := pauseControl(m.roles[m.selectedRow]); ok {
 					c = append(c, pause)
 				}
-				c = append(c, control{"Copy profile", "y"})
+				c = append(c, control{"Copy profile", "c"})
 			}
 		}
-		return append(c, control{"Retry cleanup", "c"})
+		return append(c, control{"Retry cleanup", "R"})
 	case backup:
 		return []control{{"Export bookmarks", "e"}, {"Import file", "i"}}
 	}
@@ -300,7 +300,7 @@ func (m *Model) controlGroups(compact bool) (primary, secondary []control) {
 				case sessions, tunnels:
 					secondaryAction = c.key == "v" || c.key == "r"
 				case credentials:
-					secondaryAction = c.key == "c" || c.key == "v" || c.key == "y"
+					secondaryAction = c.key == "R" || c.key == "v" || c.key == "c"
 				}
 			}
 		}

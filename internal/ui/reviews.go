@@ -139,7 +139,7 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if key == "p" {
 			return m.pauseOrResume(r.role)
 		}
-		if key == "y" {
+		if key == "c" {
 			return m.copyProfileName(r.role)
 		}
 	case "stop":

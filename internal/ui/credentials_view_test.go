@@ -133,19 +133,23 @@ func TestCredentialsViewShowsPublishedProfileNameAndCopiesIt(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, view)
 		}
 	}
-	key(f.m, "y")
+	key(f.m, "c")
 	if copied != "easy-sso-managed-one" || !strings.Contains(f.m.status, "Copied") {
 		t.Fatalf("copied %q status %q", copied, f.m.status)
 	}
 	copied = ""
-	clickHit(f.m, mouseHit(t, f.m, "key", "y", 0))
+	clickHit(f.m, mouseHit(t, f.m, "key", "c", 0))
 	if copied != "easy-sso-managed-one" {
 		t.Fatal("footer button did not copy")
 	}
-	f.m.focus = 0
 	key(f.m, "y")
 	if f.m.form == nil || f.m.form.kind != "alias" {
-		t.Fatal("sidebar y lost the account label editor")
+		t.Fatal("y no longer edits the account label")
+	}
+	key(f.m, "esc")
+	key(f.m, "R")
+	if f.creds.retries != 1 {
+		t.Fatal("R did not retry cleanup")
 	}
 }
 
@@ -156,7 +160,7 @@ func TestCopyProfileNameReportsClipboardFailure(t *testing.T) {
 	finish(f.m, f.m.load())
 	f.m.services.CopyText = func(string) error { return errors.New("no clipboard") }
 	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
-	key(f.m, "y")
+	key(f.m, "c")
 	if !strings.Contains(f.m.status, "Could not copy") || !strings.Contains(f.m.status, "easy-sso-managed-one") {
 		t.Fatalf("status %q", f.m.status)
 	}

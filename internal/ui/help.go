@@ -29,7 +29,7 @@ func shortcutGroups() []shortcutGroup {
 		{"ACCOUNTS & LOGIN", []shortcut{
 			{"Ctrl+A", "Log in to the selected profile, or review logout if active."},
 			{"A", "Open advanced multi-profile activation (uppercase A)."},
-			{"y", "Edit the selected account's display label (outside the Credentials table, where y copies the profile name)."},
+			{"y", "Edit the selected account's display label."},
 			{"Space", "In the advanced profile picker: select / deselect a role."},
 			{"Enter / Esc", "In the picker: review selected roles / cancel."},
 		}},
@@ -59,8 +59,8 @@ func shortcutGroups() []shortcutGroup {
 			{"Enter / v", "Show the selected managed credential's details."},
 			{"r", "Renew the selected managed role through login / activation."},
 			{"d", "Review removal of the selected managed credentials."},
-			{"c", "Retry pending AWS CLI SSO cleanup."},
-			{"y", "Copy the published profile name (the value for --profile) to the clipboard."},
+			{"c", "Copy the published profile name (the value for --profile) to the clipboard."},
+			{"R", "Retry pending AWS CLI SSO cleanup (uppercase R)."},
 			{"p", "Pause or resume: a paused role is taken out of the AWS credentials file and its keys stay only in this app's memory until resumed; exiting drops them."},
 		}},
 		{"BACKUP", []shortcut{

@@ -232,7 +232,7 @@ func (m *Model) footer() string {
 			}
 			return keys
 		case "role":
-			return "r: renew | d: remove | p: pause/resume | y: copy profile | PgUp/PgDn: scroll | Esc: back"
+			return "r: renew | d: remove | p: pause/resume | c: copy profile | PgUp/PgDn: scroll | Esc: back"
 		case "connection":
 			return "Enter: connect | e: edit | PgUp/PgDn: scroll | Esc: back"
 		}

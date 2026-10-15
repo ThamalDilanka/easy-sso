@@ -213,9 +213,6 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 	case "A":
 		m.startActivation()
 	case "y":
-		if m.screen == credentials && m.focus == 1 && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
-			return m.copyProfileName(m.roles[m.selectedRow])
-		}
 		if p, ok := m.profile(); ok {
 			m.form = &form{kind: "alias", fields: []field{{"Account label", m.accountAlias(p.AccountID)}}}
 		}
@@ -249,6 +246,10 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			return m.recheckSelected()
 		}
 	case "c":
+		if m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
+			return m.copyProfileName(m.roles[m.selectedRow])
+		}
+	case "R":
 		if m.screen == credentials && m.services.Credentials != nil {
 			return m.operation("Retry cleanup", func(ctx context.Context) (domain.Run, domain.ImportPlan, error) {
 				return domain.Run{}, domain.ImportPlan{}, m.services.Credentials.RetryCleanup(ctx)
