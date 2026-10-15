@@ -152,6 +152,14 @@ type TerminalService interface {
 	Has(string) bool
 	Frame(string, int, int, bool) (string, error)
 	Send(string, string, string, bool) error
+	// Scroll moves the viewport over retained output; lines > 0 shows older output.
+	Scroll(string, int) error
+	// Wheel delivers one wheel notch at a pane cell; up selects older output.
+	Wheel(string, bool, int, int) error
+	// ScrollPosition reports lines above live output and lines retained.
+	ScrollPosition(string) (int, int)
+	// Exited reports that the owned process behind a screen has finished.
+	Exited(string) bool
 }
 
 type Services struct {

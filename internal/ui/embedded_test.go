@@ -13,9 +13,28 @@ import (
 )
 
 type testTerminals struct {
-	frames map[string]string
-	sent   []string
+	frames   map[string]string
+	sent     []string
+	wheel    []string
+	scrolled []int
+	position [2]int
+	exited   map[string]bool
 }
+
+func (t *testTerminals) Scroll(_ string, lines int) error {
+	t.scrolled = append(t.scrolled, lines)
+	return nil
+}
+func (t *testTerminals) Wheel(id string, up bool, x, y int) error {
+	direction := "down"
+	if up {
+		direction = "up"
+	}
+	t.wheel = append(t.wheel, fmt.Sprintf("%s:%s:%d:%d", id, direction, x, y))
+	return nil
+}
+func (t *testTerminals) ScrollPosition(string) (int, int) { return t.position[0], t.position[1] }
+func (t *testTerminals) Exited(id string) bool            { return t.exited[id] }
 
 func (t *testTerminals) Has(id string) bool { _, ok := t.frames[id]; return ok }
 func (t *testTerminals) Frame(id string, w, h int, focused bool) (string, error) {

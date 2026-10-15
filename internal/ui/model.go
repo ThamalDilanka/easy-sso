@@ -118,6 +118,7 @@ type Model struct {
 	expanded                            map[string]bool
 	sidebarScroll                       int
 	maxScroll, maxSidebarScroll         int
+	terminalArea                        paneArea
 }
 
 func New(s domain.Services) tea.Model {

@@ -2377,7 +2377,7 @@
         if (run) {
           app.innerHTML =
             tabsHTML() +
-            `<section class="terminal"><div class="terminal-banner">${esc(run.connection.name)} · ${run.profile.account} · ${esc(run.profile.name)} · ${esc(run.profile.role)}<br>Identity fixed when this session opened.</div><pre class="terminal-output" id="terminal-output"></pre><label class="command"><span class="green">example&gt;</span><input id="command" aria-label="Simulated terminal command" autocomplete="off" spellcheck="false" maxlength="4096" value="${esc(run.input)}"></label></section><footer class="bottom">Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close session | Ctrl+C: interrupt</footer>`;
+            `<section class="terminal"><div class="terminal-banner">${esc(run.connection.name)} · ${run.profile.account} · ${esc(run.profile.name)} · ${esc(run.profile.role)}<br>Identity fixed when this session opened.</div><pre class="terminal-output" id="terminal-output"></pre><label class="command"><span class="green">example&gt;</span><input id="command" aria-label="Simulated terminal command" autocomplete="off" spellcheck="false" maxlength="4096" value="${esc(run.input)}"></label></section><footer class="bottom">Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history</footer>`;
           $("terminal-output").textContent = run.lines.join("\n");
           $("terminal-output").scrollTop = $("terminal-output").scrollHeight;
           $("command").focus({ preventScroll: true });

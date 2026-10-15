@@ -217,6 +217,10 @@ func press(m *Model, key string) tea.Cmd {
 		k.Type = tea.KeyPgDown
 	case "pgup":
 		k.Type = tea.KeyPgUp
+	case "alt+pgup":
+		k = tea.KeyMsg{Type: tea.KeyPgUp, Alt: true}
+	case "alt+pgdown":
+		k = tea.KeyMsg{Type: tea.KeyPgDown, Alt: true}
 	default:
 		k = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 	}

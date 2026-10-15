@@ -45,6 +45,13 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 		if m.busy {
 			return nil
 		}
+		if m.terminalID != "" && m.terminalArea.contains(msg.X, msg.Y) {
+			lines := -1
+			if msg.Button == tea.MouseButtonWheelUp {
+				lines = 1
+			}
+			return m.scrollTerminal(lines, true, msg.X-m.terminalArea.x, msg.Y-m.terminalArea.y)
+		}
 		delta := 3
 		if msg.Button == tea.MouseButtonWheelUp {
 			delta = -3

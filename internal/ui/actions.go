@@ -30,6 +30,13 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		}
 	}
 	if run, ok := m.embeddedRun(); ok {
+		if !k.Paste && (key == "alt+pgup" || key == "alt+pgdown") {
+			lines := max(1, m.terminalArea.height-1)
+			if key == "alt+pgdown" {
+				lines = -lines
+			}
+			return m.scrollTerminal(lines, false, 0, 0)
+		}
 		text := ""
 		if k.Type == tea.KeyRunes {
 			text = string(k.Runes)

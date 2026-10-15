@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 
@@ -10,6 +11,33 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// paneArea is the screen rectangle the terminal pane occupied in the last View.
+type paneArea struct{ x, y, width, height int }
+
+func (a paneArea) contains(x, y int) bool {
+	return a.width > 0 && a.height > 0 && x >= a.x && x < a.x+a.width && y >= a.y && y < a.y+a.height
+}
+
+// scrollTerminal is the single handler behind wheel notches and Alt+PgUp/PgDn.
+// lines > 0 shows older output. For wheel gestures x and y locate the pointer
+// inside the pane so a full-screen application can receive a mouse report.
+func (m *Model) scrollTerminal(lines int, wheel bool, x, y int) tea.Cmd {
+	run, ok := m.embeddedRun()
+	if !ok {
+		return nil
+	}
+	var err error
+	if wheel {
+		err = m.services.Terminals.Wheel(run.ID, lines > 0, x, y)
+	} else {
+		err = m.services.Terminals.Scroll(run.ID, lines)
+	}
+	if err != nil {
+		m.status = err.Error()
+	}
+	return nil
+}
 
 // Terminal selection is independent of the AWS workspace selection and profile.
 func (m *Model) embeddedRun() (domain.Run, bool) {
@@ -103,7 +131,10 @@ func (m *Model) terminalView() string {
 	}
 	lines = append(lines, m.terminalPane(run, m.width, max(1, m.height-len(lines)-1), 0, len(lines))...)
 	p := m.palette()
-	hint := "Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close session | Ctrl+C: interrupt"
+	hint := "Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history"
+	if offset, history := m.services.Terminals.ScrollPosition(run.ID); offset > 0 {
+		hint = fmt.Sprintf("History: %d of %d lines above | any key: back to live | Alt+PgUp/PgDn: scroll", offset, history)
+	}
 	lines = append(lines, m.paint(padLine(ansi.Truncate(hint, m.width, "…"), m.width), p.muted, p.surface, false))
 	return strings.Join(lines, "\n")
 }
@@ -113,6 +144,7 @@ func (m *Model) terminalPane(run domain.Run, width, height, x, y int) []string {
 	inner := max(1, width-4)
 	rows := make([]string, 0, height)
 	bodyHeight := max(1, height)
+	m.terminalArea = paneArea{x + 2, y, inner, bodyHeight}
 	frame, err := m.services.Terminals.Frame(run.ID, inner, bodyHeight, m.terminalFocus)
 	if err != nil {
 		frame = err.Error()
