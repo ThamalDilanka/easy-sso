@@ -823,3 +823,104 @@ func TestRecoverCompletedTunnelStopIsIdempotent(t *testing.T) {
 		})
 	}
 }
+
+func ec2Fixture(t *testing.T) (domain.Connection, domain.ManagedRole, domain.Snapshot, *fakeCLI) {
+	t.Helper()
+	c, role, snapshot, cli := fixture(t)
+	c.Kind, c.InstanceID = "ec2", c.RelayInstanceID
+	c.Endpoint, c.RelayInstanceID, c.RelayRegion = "", "", ""
+	c.DBPort, c.LocalPort = 0, 0
+	return c, role, snapshot, cli
+}
+
+func TestReopenStartsFreshRunFromFrozenRunAndKeepsHistory(t *testing.T) {
+	c, role, snapshot, cli := ec2Fixture(t)
+	term := &ownedHelperTerminal{helperTerminal: helperTerminal{cli: cli}}
+	defer term.close()
+	m := manager(t, cli, &bookmarks{}, Options{Terminal: term, Attempts: 1000, Interval: 5 * time.Millisecond})
+	run, err := m.Open(context.Background(), c, role, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The SSM client dies on its own; the helper records the end and exits.
+	cli.mu.Lock()
+	child := cli.children[run.SessionID]
+	cli.mu.Unlock()
+	_ = child.Stop()
+	term.wg.Wait()
+	term.exited = true
+	again, err := m.Reopen(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID == run.ID || again.State != "Connected" || again.SessionID == run.SessionID {
+		t.Fatalf("reopen did not create a fresh connected run: %+v", again)
+	}
+	if again.Profile.Name != run.Profile.Name || again.Identity != run.Identity || again.Connection.InstanceID != run.Connection.InstanceID || again.Connection.Region != run.Connection.Region {
+		t.Fatal("reopened run changed identity or destination")
+	}
+	if term.Has(run.ID) || !term.Has(again.ID) {
+		t.Fatal("dead screen kept or replacement screen missing")
+	}
+	states := map[string]string{}
+	for _, r := range m.List() {
+		states[r.ID] = r.State
+	}
+	if states[run.ID] != "Ended" || states[again.ID] != "Connected" {
+		t.Fatalf("states after reopen: %v", states)
+	}
+	cli.mu.Lock()
+	defer cli.mu.Unlock()
+	if len(cli.terminations) != 0 {
+		t.Fatal("reopen terminated an unconfirmed remote session")
+	}
+	if len(cli.snapshots) != 2 || cli.snapshots[1].AccessKeyID != snapshot.AccessKeyID || cli.snapshots[1].SessionToken != snapshot.SessionToken {
+		t.Fatal("reopen did not reuse the frozen credential snapshot")
+	}
+}
+
+func TestReopenRefusesExpiredSnapshotAndLiveShell(t *testing.T) {
+	c, role, snapshot, cli := ec2Fixture(t)
+	term := &ownedHelperTerminal{helperTerminal: helperTerminal{cli: cli}}
+	defer term.close()
+	m := manager(t, cli, &bookmarks{}, Options{Terminal: term, Attempts: 1000, Interval: 5 * time.Millisecond})
+	run, err := m.Open(context.Background(), c, role, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Reopen(context.Background(), run.ID); err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Fatalf("live shell reopened: %v", err)
+	}
+	en, _ := m.find(run.ID)
+	en.mu.Lock()
+	en.snapshot.Expiration = time.Now().Add(-time.Minute)
+	en.run.State = "Ended"
+	en.mu.Unlock()
+	term.exited = true
+	if _, err := m.Reopen(context.Background(), run.ID); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expired snapshot reopened: %v", err)
+	}
+	term.mu.Lock()
+	launched := term.launched
+	term.mu.Unlock()
+	if len(m.List()) != 1 || launched != 1 {
+		t.Fatal("refused reopen still created a run")
+	}
+	if _, err := m.Reopen(context.Background(), "not-owned"); err == nil {
+		t.Fatal("unowned run accepted")
+	}
+}
+
+func TestRecheckOnEndedShellKeepsEndedState(t *testing.T) {
+	_, _, _, cli := fixture(t)
+	id := runID()
+	en := &entry{run: domain.Run{ID: id, State: "Ended", Error: "official SSM client exited; remote termination is unconfirmed", Connection: domain.Connection{Kind: "ec2"}}, endpoint: ipc.Endpoint{Address: "unavailable"}}
+	m := &Manager{cli: cli, runs: map[string]*entry{id: en}}
+	if err := m.Recheck(context.Background(), id); err == nil {
+		t.Fatal("ended shell rechecked as if live")
+	}
+	r := m.List()[0]
+	if r.State != "Ended" || !strings.Contains(r.Error, "official SSM client exited") {
+		t.Fatalf("recheck rewrote the ended record: %s %q", r.State, r.Error)
+	}
+}

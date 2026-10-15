@@ -668,7 +668,12 @@ func (m *Manager) Recheck(ctx context.Context, id string) error {
 	}
 	en.mu.Lock()
 	db := en.run.Connection.Kind == "db"
+	state := en.run.State
 	en.mu.Unlock()
+	// An ended shell has no helper left to ask; its record is history now.
+	if !db && (state == "Ended" || state == "Failed") {
+		return errors.New("shell has ended; reconnect or close its tab")
+	}
 	if db {
 		m.dbOpen.Lock()
 		defer m.dbOpen.Unlock()
@@ -830,4 +835,47 @@ func (m *Manager) CloseShell(ctx context.Context, id string) error {
 		return fmt.Errorf("could not close local terminal: %w", err)
 	}
 	return stopErr
+}
+
+// Reopen starts a fresh shell for a run whose local SSM client has ended,
+// reusing its frozen connection, profile, identity and credential snapshot.
+// The ended record stays in history, and nothing is re-resolved from the
+// currently selected profile.
+func (m *Manager) Reopen(ctx context.Context, id string) (domain.Run, error) {
+	terminal, ok := m.options.Terminal.(interface {
+		Has(string) bool
+		Exited(string) bool
+	})
+	if !ok || !terminal.Has(id) {
+		return domain.Run{}, errors.New("shell is not owned by this workspace")
+	}
+	en, err := m.find(id)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	en.mu.Lock()
+	frozen := copyRun(en.run)
+	snapshot := en.snapshot
+	en.mu.Unlock()
+	if frozen.Connection.Kind != "ec2" {
+		return domain.Run{}, errors.New("only EC2 shells can be reopened")
+	}
+	ended := frozen.State == "Ended" || frozen.State == "Failed"
+	if !ended && !terminal.Exited(id) {
+		return domain.Run{}, errors.New("shell is still running; close it before reconnecting")
+	}
+	if !ended {
+		m.set(en, "Ended", "local SSM client exited; remote termination is unconfirmed")
+	}
+	if snapshot.AccessKeyID == "" || !snapshot.Expiration.After(time.Now()) {
+		return domain.Run{}, errors.New("frozen credentials have expired; renew the role and connect again from EC2")
+	}
+	role := domain.ManagedRole{Alias: frozen.Alias, Profile: frozen.Profile, Identity: frozen.Identity, Expiration: snapshot.Expiration, Status: "Active"}
+	run, err := m.open(ctx, frozen.Connection, role, snapshot, m.options.Terminal)
+	if err != nil {
+		return run, err
+	}
+	// Release the dead screen only once its replacement exists.
+	_ = m.CloseShell(ctx, id)
+	return run, nil
 }

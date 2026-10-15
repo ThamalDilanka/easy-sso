@@ -59,6 +59,13 @@ if args[:2]==['ssm','start-session']:
     transaction(lambda rows:rows.append(row))
     if mode.get('terminalEcho'):
         print('EMBEDDED READY',flush=True)
+    if mode.get('brokenPipe'):
+        # The real plugin prints this on stdout when its websocket write fails.
+        print('EMBEDDED READY',flush=True)
+        time.sleep(float(mode['brokenPipe']))
+        print('Cannot perform start session: write tcp 10.0.0.2:46944->10.0.0.3:443: write: broken pipe',flush=True)
+        if listener:listener.close()
+        sys.exit(1)
     while True:
         active=transaction(lambda rows:any(r['SessionId']==sid and r['Status']=='Connected' for r in rows))
         if not active:break
