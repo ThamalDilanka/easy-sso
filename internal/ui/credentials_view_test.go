@@ -282,3 +282,32 @@ func TestUnpublishedRoleShowsTimeLeftToRepublish(t *testing.T) {
 		t.Fatal("unpublished role has no ticking countdown")
 	}
 }
+
+func TestUnpublishedRoleReadsExpiredTheMomentKeysLapse(t *testing.T) {
+	f := setupUI(t)
+	p, _ := f.m.profile()
+	// The manager has not refreshed yet, so the status word is stale but the clock is not.
+	lapsed := domain.ManagedRole{Alias: "easy-sso-managed-one", Profile: p, Status: "unpublished", Unpublished: true, Expiration: time.Now().Add(-time.Second)}
+	if managedStatus(lapsed) != "expired" {
+		t.Fatalf("stale unpublished role shown as %q", managedStatus(lapsed))
+	}
+	f.creds.roles = []domain.ManagedRole{lapsed}
+	finish(f.m, f.m.load())
+	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
+	if header := f.m.identityCredentialStatus(p); strings.Contains(header, "unpublished") {
+		t.Fatalf("header still offers republish: %q", header)
+	}
+	for _, c := range f.m.controls() {
+		if c.key == "u" {
+			t.Fatal("republish offered for lapsed keys")
+		}
+	}
+	two := []domain.ManagedRole{lapsed, lapsed}
+	two[0].Status, two[0].Expiration = "unpublished", time.Now().Add(time.Hour)
+	two[1].Alias, two[1].Status, two[1].Expiration = "easy-sso-managed-two", "unpublished", time.Now().Add(time.Hour)
+	f.m.roles = two
+	warnings := strings.Join(f.m.exitWarnings(), "\n")
+	if !strings.Contains(warnings, "2 unpublished credential entries will lose held keys on exit") {
+		t.Fatalf("exit warning wording: %q", warnings)
+	}
+}

@@ -55,7 +55,7 @@ func (m *Model) exitWarnings() []string {
 		}
 	}
 	if unpublished > 0 {
-		lines = append(lines, exitCount(unpublished, "unpublished credential entry", "unpublished credential entries")+" will lose its held keys on exit; renew after restarting.")
+		lines = append(lines, exitCount(unpublished, "unpublished credential entry", "unpublished credential entries")+" will lose held keys on exit; renew after restarting.")
 	}
 	if len(m.roles) > 0 {
 		lines = append(lines, exitCount(len(m.roles), "saved login credential entry", "saved login credential entries")+" are saved on this device.", "Exit keeps credentials. Clear creds & exit removes easy-sso managed credentials.")

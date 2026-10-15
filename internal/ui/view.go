@@ -44,11 +44,11 @@ func managedStatus(r domain.ManagedRole) string {
 	if strings.EqualFold(r.Status, "unknown") || r.Status == "" {
 		return "unknown"
 	}
-	if strings.EqualFold(r.Status, "unpublished") {
-		return "unpublished"
-	}
 	if !r.Expiration.After(time.Now()) || strings.EqualFold(r.Status, "expired") {
 		return "expired"
+	}
+	if strings.EqualFold(r.Status, "unpublished") {
+		return "unpublished"
 	}
 	if strings.EqualFold(r.Status, "active") {
 		return "active until " + humanTimestamp(r.Expiration)
