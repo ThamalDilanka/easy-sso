@@ -120,6 +120,23 @@ func (m *Model) identity() []string {
 	}
 	return lines
 }
+
+// profileDot is the sidebar marker for a profile's credential state: filled
+// while keys are published, hollow otherwise, and green whenever this app holds
+// usable keys for it, published or not.
+func profileDot(badge string, ascii bool) (dot string, green bool) {
+	filled, hollow := "●", "○"
+	if ascii {
+		filled, hollow = "+", "-"
+	}
+	switch badge {
+	case "Active":
+		return filled, true
+	case "Unpublished":
+		return hollow, true
+	}
+	return hollow, false
+}
 func (m *Model) sidebar() string {
 	var lines []string
 	lastSource, lastAccount := "", ""
@@ -155,18 +172,10 @@ func (m *Model) sidebar() string {
 			continue
 		}
 		badge := m.loginBadge(p)
-		dot := "○"
-		if badge == "Active" {
-			dot = "●"
-		}
-		if m.ascii {
-			dot = "-"
-			if badge == "Active" {
-				dot = "+"
-			}
-		}
+		dot, _ := profileDot(badge, m.ascii)
 		label := "  " + dot + " " + p.Name
-		if badge != "Active" && badge != "Logged out" {
+		// Colour carries the unpublished state; only ASCII or no-colour output spells it out.
+		if badge != "Active" && badge != "Logged out" && (badge != "Unpublished" || m.ascii || m.noColor) {
 			label += " · " + badge
 		}
 		if p.Error != "" {

@@ -21,7 +21,8 @@ func (m *Model) syncExpiryTimers(now time.Time) tea.Cmd {
 	next := map[string]expiryTimer{}
 	var cmds []tea.Cmd
 	for _, role := range m.roles {
-		if !strings.EqualFold(role.Status, "active") || !role.Expiration.After(now) {
+		// Unpublished roles keep counting down too: that is the republish window.
+		if !(roleActive(role) || roleUnpublished(role)) || !role.Expiration.After(now) {
 			continue
 		}
 		current, ok := m.expiryTimers[role.Alias]
@@ -61,17 +62,28 @@ func humanTimestamp(value time.Time) string {
 }
 
 func (m *Model) identityCredentialStatus(p domain.Profile) string {
-	paused := false
-	for _, r := range m.roles {
-		if sameProfile(r.Profile, p) && roleActive(r) {
+	var held *domain.ManagedRole
+	for i := range m.roles {
+		r := &m.roles[i]
+		if !sameProfile(r.Profile, p) {
+			continue
+		}
+		if roleActive(*r) {
 			return "active · " + credentialCountdown(r.Expiration, time.Now())
 		}
-		paused = paused || (sameProfile(r.Profile, p) && roleUnpublished(r))
+		if roleUnpublished(*r) {
+			held = r
+		}
 	}
-	if paused {
-		return "unpublished · republish in Credentials (u)"
+	if held != nil {
+		return "unpublished · republish within " + republishWindow(*held) + " (u)"
 	}
 	return m.loginStatus(p)
+}
+
+// republishWindow is how long an unpublished role's held keys stay usable.
+func republishWindow(r domain.ManagedRole) string {
+	return strings.TrimPrefix(credentialCountdown(r.Expiration, time.Now()), "Expires in ")
 }
 
 // copyProfileName puts the published profile name on the clipboard. Only the
@@ -112,7 +124,7 @@ func (m *Model) credentialsContent() string {
 	width := m.contentWidth()
 	// Reserve the selection marker, index column, and column spacing.
 	indexWidth := max(2, len(fmt.Sprint(len(m.roles))))
-	widths := []int{max(6, width-2-6-12-10-10-indexWidth-2), 12, 10, 10}
+	widths := []int{max(6, width-2-6-12-12-10-indexWidth-2), 12, 12, 10}
 	row := func(cells ...string) string {
 		parts := make([]string, len(cells))
 		for i, cell := range cells {
@@ -128,6 +140,9 @@ func (m *Model) credentialsContent() string {
 			status = "active"
 			remaining = strings.TrimPrefix(credentialCountdown(r.Expiration, time.Now()), "Expires in ")
 		}
+		if status == "unpublished" {
+			remaining = republishWindow(r)
+		}
 		if m.ascii && remaining == "—" {
 			remaining = "-"
 		}
@@ -135,7 +150,11 @@ func (m *Model) credentialsContent() string {
 	}
 	if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
 		r := m.roles[m.selectedRow]
-		lines = append(lines, "", "Expires: "+humanTimestamp(r.Expiration), "Use: --profile "+r.Alias, "Source profile: "+r.Profile.Name, "Account: "+m.accountLabel(r.Profile.AccountID), "Role: "+r.Profile.Role)
+		lines = append(lines, "", "Expires: "+humanTimestamp(r.Expiration))
+		if roleUnpublished(r) {
+			lines = append(lines, "Republish possible for "+republishWindow(r))
+		}
+		lines = append(lines, "Use: --profile "+r.Alias, "Source profile: "+r.Profile.Name, "Account: "+m.accountLabel(r.Profile.AccountID), "Role: "+r.Profile.Role)
 	}
 	return strings.Join(lines, "\n")
 }

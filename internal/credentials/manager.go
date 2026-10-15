@@ -25,7 +25,7 @@ type Manager struct {
 	config, credentials, state string
 	mu                         sync.Mutex
 	// parked holds the exact credentials section of each unpublished alias. It is
-	// never written to disk, so pausing leaves no key material in any file.
+	// never written to disk, so unpublishing leaves no key material in any file.
 	parked map[string]string
 }
 type metadata struct {

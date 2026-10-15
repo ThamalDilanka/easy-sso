@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -224,5 +225,60 @@ func TestExpiredUnpublishedRoleIsReportedExpired(t *testing.T) {
 	}
 	if labels["u"] != "Republish" {
 		t.Fatalf("live unpublished role controls: %v", labels)
+	}
+}
+
+func TestProfileDotForBadges(t *testing.T) {
+	for _, c := range []struct {
+		badge string
+		ascii bool
+		dot   string
+		green bool
+	}{
+		{"Active", false, "●", true}, {"Unpublished", false, "○", true}, {"Logged out", false, "○", false}, {"Unknown", false, "○", false},
+		{"Active", true, "+", true}, {"Unpublished", true, "-", true}, {"Logged out", true, "-", false},
+	} {
+		dot, green := profileDot(c.badge, c.ascii)
+		if dot != c.dot || green != c.green {
+			t.Fatalf("%+v: got %q green=%v", c, dot, green)
+		}
+	}
+}
+
+func TestSidebarMarksUnpublishedProfileWithGreenHollowDot(t *testing.T) {
+	f := setupUI(t)
+	p, _ := f.m.profile()
+	f.creds.roles = []domain.ManagedRole{{Alias: "easy-sso-managed-one", Profile: p, Status: "unpublished", Unpublished: true, Expiration: time.Now().Add(time.Hour)}}
+	finish(f.m, f.m.load())
+	f.m.ascii, f.m.noColor = false, false
+	if s := f.m.sidebar(); !strings.Contains(s, "○ one") || strings.Contains(s, "Unpublished") {
+		t.Fatalf("colour mode should carry the state in the dot only:\n%s", s)
+	}
+	f.m.ascii, f.m.noColor = true, true
+	if s := f.m.sidebar(); !strings.Contains(s, "- one · Unpublished") {
+		t.Fatalf("ascii mode lost the unpublished marker:\n%s", s)
+	}
+}
+
+func TestUnpublishedRoleShowsTimeLeftToRepublish(t *testing.T) {
+	f := setupUI(t)
+	p, _ := f.m.profile()
+	f.creds.roles = []domain.ManagedRole{{Alias: "easy-sso-managed-one", Profile: p, Status: "unpublished", Unpublished: true, Expiration: time.Now().Add(90 * time.Minute)}}
+	finish(f.m, f.m.load())
+	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
+	view := f.m.View()
+	if !regexp.MustCompile(`unpublished\s+01:\d\d:\d\d`).MatchString(view) {
+		t.Fatalf("REMAINING lacks the countdown:\n%s", view)
+	}
+	if !strings.Contains(view, "Republish possible for 01:") {
+		t.Fatalf("details lack the republish window:\n%s", view)
+	}
+	header := f.m.identityCredentialStatus(p)
+	if !strings.Contains(header, "unpublished") || !strings.Contains(header, "01:") || !strings.Contains(header, "(u)") {
+		t.Fatalf("header %q", header)
+	}
+	f.m.syncExpiryTimers(time.Now())
+	if _, ok := f.m.expiryTimers["easy-sso-managed-one"]; !ok {
+		t.Fatal("unpublished role has no ticking countdown")
 	}
 }

@@ -231,7 +231,7 @@ func (m *Model) surface(content []string, width, height int, sidebar bool, x, y 
 		if i < count && actions[start+i].kind == "profile" {
 			profileStatus = m.loginBadge(m.services.Profiles[actions[start+i].index])
 			switch profileStatus {
-			case "Active":
+			case "Active", "Unpublished":
 				fg = p.text
 				if m.dark {
 					fg = "#FFFFFF"
@@ -270,11 +270,7 @@ func (m *Model) surface(content []string, width, height int, sidebar bool, x, y 
 			fg = p.blue
 		}
 		rendered := m.paintSuccess(padded, fg, bg, headingFocused)
-		if profileStatus == "Active" {
-			dot := "●"
-			if m.ascii {
-				dot = "+"
-			}
+		if dot, green := profileDot(profileStatus, m.ascii); green {
 			if at := strings.Index(padded, dot); at >= 0 {
 				rendered = m.paint(padded[:at], fg, bg, false) + m.paint(dot, p.green, bg, false) + m.paint(padded[at+len(dot):], fg, bg, false)
 			}

@@ -225,8 +225,8 @@ func (m *Model) controls() []control {
 			return append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"}, control{"Back", "esc"})
 		case "role":
 			c := []control{{"Renew", "r"}, {"Remove", "d"}}
-			if pause, ok := publishControl(m.review.role); ok {
-				c = append(c, pause)
+			if publish, ok := publishControl(m.review.role); ok {
+				c = append(c, publish)
 			}
 			return append(c, control{"Copy profile", "c"}, control{"Back", "esc"})
 		default:
@@ -270,8 +270,8 @@ func (m *Model) controls() []control {
 		if len(m.roles) > 0 {
 			c = append(c, control{"Renew", "r"}, control{"Remove", "d"}, control{"Details", "v"})
 			if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
-				if pause, ok := publishControl(m.roles[m.selectedRow]); ok {
-					c = append(c, pause)
+				if publish, ok := publishControl(m.roles[m.selectedRow]); ok {
+					c = append(c, publish)
 				}
 				c = append(c, control{"Copy profile", "c"})
 			}
