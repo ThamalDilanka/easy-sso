@@ -37,7 +37,7 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			}
 			return m.scrollTerminal(lines, false, 0, 0)
 		}
-		if m.terminalEnded(run) {
+		if run.Connection.Kind == "ec2" && m.terminalEnded(run) {
 			if !k.Paste && (key == "r" || key == "enter") {
 				return m.reconnectTerminal()
 			}

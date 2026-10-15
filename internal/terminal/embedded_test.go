@@ -190,13 +190,29 @@ func TestScrollClampsAndStaysWhileOutputArrives(t *testing.T) {
 	if offset, _ := e.ScrollPosition("clamp"); offset != 13 {
 		t.Fatalf("wheel did not add three lines: %d", offset)
 	}
-	typeText(t, e, "clamp", "seq 61 70\n")
-	waitFrame(t, e, "clamp", "\n70\n", 80, 20)
+	typeText(t, e, "clamp", "(sleep 0.3; seq 61 90) &\n")
+	waitFrame(t, e, "clamp", "seq 61 90", 80, 20)
 	if offset, _ := e.ScrollPosition("clamp"); offset != 0 {
 		t.Fatal("typing did not return to live output")
 	}
 	if err := e.Scroll("clamp", 10); err != nil {
 		t.Fatal(err)
+	}
+	// Output arriving while scrolled grows history underneath a fixed viewport.
+	_, before := e.ScrollPosition("clamp")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		offset, history := e.ScrollPosition("clamp")
+		if history >= before+30 {
+			if offset != 10 {
+				t.Fatalf("new output moved the viewport: offset %d", offset)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background output never arrived: history %d", history)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if _, err := e.Frame("clamp", 40, 10, false); err != nil {
 		t.Fatal(err)

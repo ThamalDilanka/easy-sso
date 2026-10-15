@@ -494,3 +494,40 @@ func TestEndedTabWithoutErrorStillShowsBanner(t *testing.T) {
 		t.Fatalf("no banner for an exited PTY:\n%s", v)
 	}
 }
+
+func TestReconnectFailureShowsLaunchedReplacementWithItsError(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"alpha": "dead", "alpha2": "AccessDeniedException output"}, exited: map[string]bool{"alpha": true, "alpha2": true}}
+	f.m.services.Terminals = terminals
+	run := domain.Run{ID: "alpha", Connection: domain.Connection{Name: "alpha", Kind: "ec2"}, State: "Ended"}
+	f.m.showTerminal(run)
+	// The replacement launched a screen, then failed before confirming.
+	f.sessions.reopenRun = domain.Run{ID: "alpha2", Connection: run.Connection, State: "Failed", Error: "Access denied: this role cannot start the SSM shell."}
+	f.sessions.reopenErr = errors.New("Access denied: this role cannot start the SSM shell.")
+	key(f.m, "r")
+	ids := []string{}
+	for _, tab := range f.m.terminalTabs {
+		ids = append(ids, tab.ID)
+	}
+	if strings.Join(ids, ",") != "alpha,alpha2" || f.m.terminalID != "alpha2" {
+		t.Fatalf("launched replacement hidden: tabs=%v selected=%q", ids, f.m.terminalID)
+	}
+	if v := f.m.View(); !strings.Contains(v, "Connection failed: Access denied") || !strings.Contains(v, "AccessDeniedException output") {
+		t.Fatalf("replacement diagnostics not shown:\n%s", v)
+	}
+}
+
+func TestEndedDatabaseTabKeepsForwardingKeysWithoutReconnectOffer(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"db": "psql ended"}, exited: map[string]bool{"db": true}}
+	f.m.services.Terminals = terminals
+	f.m.showTerminal(domain.Run{ID: "db", Connection: domain.Connection{Name: "db", Kind: "db", AuthMode: "postgres-iam"}, State: "Ended"})
+	key(f.m, "r")
+	key(f.m, "enter")
+	if strings.Join(terminals.sent, ",") != "db:r,db:enter" || len(f.sessions.reopened) != 0 {
+		t.Fatalf("database tab offered or attempted reconnect: sent=%v reopened=%v", terminals.sent, f.sessions.reopened)
+	}
+	if v := f.m.View(); strings.Contains(v, "reconnect") || strings.Contains(f.m.status, "Session ended") {
+		t.Fatalf("database tab advertises reconnect:\n%s", v)
+	}
+}

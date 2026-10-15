@@ -347,6 +347,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reconnectFrom = ""
 			if x.err != nil {
 				m.status = "Error: " + x.err.Error()
+				// A replacement that launched a screen before failing stays
+				// visible with its diagnostics, like a failed first connection.
+				if x.run.ID != "" && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
+					m.showTerminal(x.run)
+				}
 			} else {
 				m.replaceTerminalTab(from, x.run)
 				m.status = "Terminal reconnected."
