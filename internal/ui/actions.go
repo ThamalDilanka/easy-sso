@@ -213,8 +213,15 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 	case "A":
 		m.startActivation()
 	case "y":
+		if m.screen == credentials && m.focus == 1 && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
+			return m.copyProfileName(m.roles[m.selectedRow])
+		}
 		if p, ok := m.profile(); ok {
 			m.form = &form{kind: "alias", fields: []field{{"Account label", m.accountAlias(p.AccountID)}}}
+		}
+	case "p":
+		if m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
+			return m.pauseOrResume(m.roles[m.selectedRow])
 		}
 	case "f":
 		if m.screen == sessions || m.screen == tunnels {

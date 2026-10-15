@@ -48,6 +48,15 @@ func (m *Model) exitWarnings() []string {
 	if external > 0 {
 		lines = append(lines, exitCount(external, "independent external shell", "independent external shells")+" will remain open.")
 	}
+	paused := 0
+	for _, r := range m.roles {
+		if rolePaused(r) {
+			paused++
+		}
+	}
+	if paused > 0 {
+		lines = append(lines, exitCount(paused, "paused credential entry", "paused credential entries")+" will be dropped from memory on exit; renew after restarting.")
+	}
 	if len(m.roles) > 0 {
 		lines = append(lines, exitCount(len(m.roles), "saved login credential entry", "saved login credential entries")+" are saved on this device.", "Exit keeps credentials. Clear creds & exit removes easy-sso managed credentials.")
 	}

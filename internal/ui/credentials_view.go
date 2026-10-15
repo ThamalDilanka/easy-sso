@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -60,12 +61,48 @@ func humanTimestamp(value time.Time) string {
 }
 
 func (m *Model) identityCredentialStatus(p domain.Profile) string {
+	paused := false
 	for _, r := range m.roles {
 		if sameProfile(r.Profile, p) && roleActive(r) {
 			return "active · " + credentialCountdown(r.Expiration, time.Now())
 		}
+		paused = paused || (sameProfile(r.Profile, p) && rolePaused(r))
+	}
+	if paused {
+		return "paused · resume in Credentials (p)"
 	}
 	return m.loginStatus(p)
+}
+
+// copyProfileName puts the published profile name on the clipboard. Only the
+// name is ever copied, never key material.
+func (m *Model) copyProfileName(r domain.ManagedRole) tea.Cmd {
+	name := r.Alias
+	copy := m.copyText()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := copy(ctx, name); err != nil {
+			return clipboardMsg{"Could not copy. Use --profile " + name + " (select and copy it manually)."}
+		}
+		return clipboardMsg{"Copied profile name " + name + " to the clipboard; use it with --profile."}
+	}
+}
+
+// pauseOrResume toggles whether the role's entry is present in the AWS
+// credentials file; the same handler serves the key, the button and the review.
+func (m *Model) pauseOrResume(r domain.ManagedRole) tea.Cmd {
+	if m.services.Credentials == nil {
+		return nil
+	}
+	action, call := "Pause credentials", m.services.Credentials.Pause
+	if rolePaused(r) {
+		action, call = "Resume credentials", m.services.Credentials.Resume
+	}
+	alias := r.Alias
+	return m.operation(action, func(context.Context) (domain.Run, domain.ImportPlan, error) {
+		return domain.Run{}, domain.ImportPlan{}, call(alias)
+	})
 }
 
 func (m *Model) credentialsContent() string {
@@ -83,7 +120,7 @@ func (m *Model) credentialsContent() string {
 		}
 		return strings.Join(parts, "  ")
 	}
-	lines := []string{"  " + padLine("#", indexWidth) + "  " + row("ALIAS", "ACCOUNT", "STATUS", "REMAINING"), "  " + strings.Repeat("-", width-2)}
+	lines := []string{"  " + padLine("#", indexWidth) + "  " + row("PROFILE", "ACCOUNT", "STATUS", "REMAINING"), "  " + strings.Repeat("-", width-2)}
 	for i, r := range m.roles {
 		status := managedStatus(r)
 		remaining := "—"
@@ -94,11 +131,11 @@ func (m *Model) credentialsContent() string {
 		if m.ascii && remaining == "—" {
 			remaining = "-"
 		}
-		lines = append(lines, m.clickable(m.row(padLine(fmt.Sprint(i+1), indexWidth)+"  "+row(managedLabel(r), r.Profile.AccountID, status, remaining), i == m.selectedRow), mouseAction{kind: "row", index: i}))
+		lines = append(lines, m.clickable(m.row(padLine(fmt.Sprint(i+1), indexWidth)+"  "+row(r.Alias, r.Profile.AccountID, status, remaining), i == m.selectedRow), mouseAction{kind: "row", index: i}))
 	}
 	if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
 		r := m.roles[m.selectedRow]
-		lines = append(lines, "", "Expires: "+humanTimestamp(r.Expiration), "Selected: "+managedLabel(r), "Profile: "+r.Profile.Name, "Account: "+m.accountLabel(r.Profile.AccountID), "Role: "+r.Profile.Role)
+		lines = append(lines, "", "Expires: "+humanTimestamp(r.Expiration), "Use: --profile "+r.Alias, "Source profile: "+r.Profile.Name, "Account: "+m.accountLabel(r.Profile.AccountID), "Role: "+r.Profile.Role)
 	}
 	return strings.Join(lines, "\n")
 }

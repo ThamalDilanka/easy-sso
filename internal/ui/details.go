@@ -16,13 +16,20 @@ func roleActive(r domain.ManagedRole) bool {
 	return strings.EqualFold(r.Status, "active") && r.Expiration.After(time.Now())
 }
 
+// rolePaused reports a role whose entry is out of the credentials file while
+// its keys are parked in this process.
+func rolePaused(r domain.ManagedRole) bool {
+	return r.Paused || strings.EqualFold(r.Status, "paused")
+}
+
+// selectedProfileActive also counts paused roles, so Log out stays available.
 func (m *Model) selectedProfileActive() bool {
 	p, ok := m.profile()
 	if !ok {
 		return false
 	}
 	for _, r := range m.roles {
-		if sameProfile(r.Profile, p) && roleActive(r) {
+		if sameProfile(r.Profile, p) && (roleActive(r) || rolePaused(r)) {
 			return true
 		}
 	}

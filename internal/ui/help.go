@@ -60,6 +60,8 @@ func shortcutGroups() []shortcutGroup {
 			{"r", "Renew the selected managed role through login / activation."},
 			{"d", "Review removal of the selected managed credentials."},
 			{"c", "Retry pending AWS CLI SSO cleanup."},
+			{"y", "Copy the published profile name (the value for --profile) to the clipboard."},
+			{"p", "Pause or resume: a paused role is taken out of the AWS credentials file and its keys stay only in this app's memory until resumed; exiting drops them."},
 		}},
 		{"BACKUP", []shortcut{
 			{"e", "Export bookmarks to a new file."},

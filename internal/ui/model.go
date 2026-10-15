@@ -73,6 +73,9 @@ type profilesMsg struct {
 // AuthNoticeMsg contains transient official CLI sign-in guidance, never persisted.
 type AuthNoticeMsg string
 
+// clipboardMsg reports the outcome of a clipboard write; it carries no secrets.
+type clipboardMsg struct{ feedback string }
+
 // Model exposes a normal Bubble Tea model, with all credentials kept in services.
 // No access key or token is copied into UI state.
 type Model struct {
@@ -245,6 +248,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.mouse(x)
 	case AuthNoticeMsg:
 		m.receiveAuthNotice(string(x))
+	case clipboardMsg:
+		m.status = x.feedback
+		return m, nil
 	case authActionMsg:
 		if m.busy && x.request == m.request && x.url == m.authURL {
 			m.authFeedback = x.feedback
@@ -392,6 +398,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "AWS CLI SSO cleanup complete. Selected role credentials published."
 		case "Retry cleanup":
 			m.status = "AWS CLI SSO cleanup complete. Activate roles again to publish a new batch."
+		case "Pause credentials":
+			m.review = nil
+			m.status = "Credentials paused: the profile entry is out of the AWS credentials file until you resume it (p). Its keys stay only in this app's memory."
+		case "Resume credentials":
+			m.review = nil
+			m.status = "Credentials resumed: the profile entry is back in the AWS credentials file."
 		case "Open connection":
 			if (x.run.Connection.Kind == "ec2" || x.run.Connection.IAMDatabase()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
 				m.pendingTarget = x.run.Connection.ID

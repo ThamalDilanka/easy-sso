@@ -163,6 +163,13 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 
 type control struct{ label, key string }
 
+func pauseControl(r domain.ManagedRole) control {
+	if rolePaused(r) {
+		return control{"Resume", "p"}
+	}
+	return control{"Pause", "p"}
+}
+
 func (m *Model) controls() []control {
 	if m.busy && m.authURL != "" {
 		return []control{{"Open browser", "o"}, {"Copy URL", "c"}, {"Cancel", "esc"}}
@@ -211,7 +218,7 @@ func (m *Model) controls() []control {
 			}
 			return append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"}, control{"Back", "esc"})
 		case "role":
-			return []control{{"Renew", "r"}, {"Remove", "d"}, {"Back", "esc"}}
+			return []control{{"Renew", "r"}, {"Remove", "d"}, pauseControl(m.review.role), {"Copy profile", "y"}, {"Back", "esc"}}
 		default:
 			return []control{{"Confirm", "enter"}, {"Cancel", "esc"}}
 		}
@@ -252,6 +259,9 @@ func (m *Model) controls() []control {
 		var c []control
 		if len(m.roles) > 0 {
 			c = append(c, control{"Renew", "r"}, control{"Remove", "d"}, control{"Details", "v"})
+			if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
+				c = append(c, pauseControl(m.roles[m.selectedRow]), control{"Copy profile", "y"})
+			}
 		}
 		return append(c, control{"Retry cleanup", "c"})
 	case backup:
@@ -278,7 +288,7 @@ func (m *Model) controlGroups(compact bool) (primary, secondary []control) {
 				case sessions, tunnels:
 					secondaryAction = c.key == "v" || c.key == "r"
 				case credentials:
-					secondaryAction = c.key == "c" || c.key == "v"
+					secondaryAction = c.key == "c" || c.key == "v" || c.key == "y"
 				}
 			}
 		}

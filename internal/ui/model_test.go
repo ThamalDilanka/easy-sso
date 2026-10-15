@@ -688,6 +688,7 @@ func TestPerAliasStatusAndPersistenceFailure(t *testing.T) {
 		t.Fatal("valid alias not preferred")
 	}
 	f.m.services.SaveAccountAlias = func(string, string) error { return errors.New("settings write failed") }
+	key(f.m, "tab") // y on the focused Credentials table copies the profile name; labels are edited from the sidebar
 	key(f.m, "y")
 	fill(f.m, "Uncommitted label")
 	if f.m.aliases[p.AccountID] != "First account" || f.m.form == nil || !strings.Contains(f.m.status, "settings write failed") {

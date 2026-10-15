@@ -49,8 +49,33 @@ func (m *Model) receiveAuthNotice(text string) {
 	}
 }
 
+// writeClipboard puts text on the system clipboard. Under WSL the Windows
+// clip.exe is used so the text lands on the host clipboard.
+func writeClipboard(ctx context.Context, text string) error {
+	if os.Getenv("WSL_DISTRO_NAME") != "" {
+		// Windows clip.exe consumes UTF-16LE reliably, independent of its code page.
+		var data bytes.Buffer
+		for _, unit := range utf16.Encode([]rune(text)) {
+			_ = binary.Write(&data, binary.LittleEndian, unit)
+		}
+		cmd := exec.CommandContext(ctx, "clip.exe")
+		cmd.Stdin = &data
+		return cmd.Run()
+	}
+	return clipboard.WriteAll(text)
+}
+
+// copyText returns the clipboard writer in use: the injected one or the default.
+func (m *Model) copyText() func(context.Context, string) error {
+	if custom := m.services.CopyText; custom != nil {
+		return func(_ context.Context, text string) error { return custom(text) }
+	}
+	return writeClipboard
+}
+
 func (m *Model) authAction(key string) tea.Cmd {
 	target, request := m.authURL, m.request
+	copy := m.copyText()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -59,18 +84,7 @@ func (m *Model) authAction(key string) tea.Cmd {
 		wsl := os.Getenv("WSL_DISTRO_NAME") != ""
 		if key == "c" {
 			feedback = "Copied sign-in URL to clipboard."
-			if wsl {
-				// Windows clip.exe consumes UTF-16LE reliably, independent of its code page.
-				var data bytes.Buffer
-				for _, unit := range utf16.Encode([]rune(target)) {
-					_ = binary.Write(&data, binary.LittleEndian, unit)
-				}
-				cmd := exec.CommandContext(ctx, "clip.exe")
-				cmd.Stdin = &data
-				err = cmd.Run()
-			} else {
-				err = clipboard.WriteAll(target)
-			}
+			err = copy(ctx, target)
 		} else {
 			switch {
 			case wsl || runtime.GOOS == "windows":

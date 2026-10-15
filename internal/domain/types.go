@@ -183,7 +183,9 @@ type Services struct {
 	SaveTheme        func(string) error
 	AccountAliases   map[string]string
 	SaveAccountAlias func(string, string) error
-	BookmarkPath     string
+	// CopyText replaces the system clipboard writer; nil selects the default.
+	CopyText     func(string) error
+	BookmarkPath string
 	// True only for a qualified terminal adapter with stable handles.
 	FocusTerminal bool
 }

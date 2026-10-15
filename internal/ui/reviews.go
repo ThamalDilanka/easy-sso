@@ -136,6 +136,12 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if key == "r" {
 			m.renewRole(r.role)
 		}
+		if key == "p" {
+			return m.pauseOrResume(r.role)
+		}
+		if key == "y" {
+			return m.copyProfileName(r.role)
+		}
 	case "stop":
 		if key == "enter" && m.services.Sessions != nil {
 			id := r.run.ID
