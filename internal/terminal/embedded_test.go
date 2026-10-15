@@ -127,3 +127,125 @@ func TestNaturallyExitedScreenCanBeClosed(t *testing.T) {
 		t.Fatal("could not dismiss exited screen", err)
 	}
 }
+
+func TestScrollShowsRetainedOutputAndInputSnapsBack(t *testing.T) {
+	e, err := NewEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testScreen(t, "sb", e)
+	typeText(t, e, "sb", "seq 1 200\n")
+	waitFrame(t, e, "sb", "\n200\n", 80, 20)
+	if err := e.Scroll("sb", 5000); err != nil {
+		t.Fatal(err)
+	}
+	frame, _ := e.Frame("sb", 80, 20, true)
+	plain := ansi.Strip(frame)
+	if !strings.HasPrefix(plain, "READY> seq 1 200\n1\n2\n") {
+		t.Fatalf("oldest history not shown: %q", plain)
+	}
+	if strings.Contains(frame, "\x1b[7m") {
+		t.Fatal("cursor drawn while scrolled")
+	}
+	offset, history := e.ScrollPosition("sb")
+	if offset != history || history < 180 {
+		t.Fatalf("position %d/%d", offset, history)
+	}
+	if err := e.Scroll("sb", -history+1); err != nil {
+		t.Fatal(err)
+	}
+	if offset, _ = e.ScrollPosition("sb"); offset != 1 {
+		t.Fatalf("offset after partial scroll: %d", offset)
+	}
+	typeText(t, e, "sb", "")
+	if offset, _ = e.ScrollPosition("sb"); offset != 0 {
+		t.Fatal("input did not snap back to live output")
+	}
+	frame = waitFrame(t, e, "sb", "182\n183", 80, 20)
+	if !strings.HasPrefix(frame, "182\n") {
+		t.Fatalf("live frame not restored: %q", frame)
+	}
+}
+
+func TestScrollClampsAndStaysWhileOutputArrives(t *testing.T) {
+	e, err := NewEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testScreen(t, "clamp", e)
+	if err := e.Scroll("clamp", 50); err != nil {
+		t.Fatal(err)
+	}
+	if offset, _ := e.ScrollPosition("clamp"); offset != 0 {
+		t.Fatalf("scrolled past empty history: %d", offset)
+	}
+	typeText(t, e, "clamp", "seq 1 60\n")
+	waitFrame(t, e, "clamp", "\n60\n", 80, 20)
+	if err := e.Scroll("clamp", 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Wheel("clamp", true, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if offset, _ := e.ScrollPosition("clamp"); offset != 13 {
+		t.Fatalf("wheel did not add three lines: %d", offset)
+	}
+	typeText(t, e, "clamp", "seq 61 70\n")
+	waitFrame(t, e, "clamp", "\n70\n", 80, 20)
+	if offset, _ := e.ScrollPosition("clamp"); offset != 0 {
+		t.Fatal("typing did not return to live output")
+	}
+	if err := e.Scroll("clamp", 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Frame("clamp", 40, 10, false); err != nil {
+		t.Fatal(err)
+	}
+	if offset, _ := e.ScrollPosition("clamp"); offset != 10 {
+		t.Fatal("resize changed the viewport offset")
+	}
+}
+
+func TestAlternateScreenGesturesGoToApplication(t *testing.T) {
+	e, err := NewEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testScreen(t, "alt", e)
+	typeText(t, e, "alt", "seq 1 100 | less\n")
+	waitFrame(t, e, "alt", "\n19\n", 80, 20)
+	if err := e.Wheel("alt", false, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(t, e, "alt", "4\n5\n6", 80, 20)
+	if offset, _ := e.ScrollPosition("alt"); offset != 0 {
+		t.Fatal("local viewport moved on the alternate screen")
+	}
+	if err := e.Scroll("alt", -19); err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(t, e, "alt", "\n40\n", 80, 20)
+	typeText(t, e, "alt", "q")
+	waitFrame(t, e, "alt", "READY> seq 1 100 | less", 80, 20)
+	typeText(t, e, "alt", "seq 1 100 | less --mouse\n")
+	waitFrame(t, e, "alt", "\n19\n", 80, 20)
+	if err := e.Wheel("alt", false, 10, 5); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		frame, err := e.Frame("alt", 80, 20, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(ansi.Strip(frame), "1\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("wheel report did not reach less: %q", ansi.Strip(frame))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	typeText(t, e, "alt", "q")
+	waitFrame(t, e, "alt", "READY> seq 1 100 | less --mouse", 80, 20)
+}
