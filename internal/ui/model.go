@@ -119,6 +119,7 @@ type Model struct {
 	sidebarScroll                       int
 	maxScroll, maxSidebarScroll         int
 	terminalArea                        paneArea
+	reconnectFrom                       string
 }
 
 func New(s domain.Services) tea.Model {
@@ -340,6 +341,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if x.action == "Exit" && x.err == nil {
 			return m, tea.Quit
+		}
+		if x.action == "Reconnect terminal" {
+			from := m.reconnectFrom
+			m.reconnectFrom = ""
+			if x.err != nil {
+				m.status = "Error: " + x.err.Error()
+			} else {
+				m.replaceTerminalTab(from, x.run)
+				m.status = "Terminal reconnected."
+			}
+			return m, m.afterOperation()
 		}
 		if x.action == "Close terminal" {
 			if m.services.Terminals == nil || !m.services.Terminals.Has(x.run.ID) {

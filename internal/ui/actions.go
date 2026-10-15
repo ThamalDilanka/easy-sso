@@ -37,6 +37,13 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			}
 			return m.scrollTerminal(lines, false, 0, 0)
 		}
+		if m.terminalEnded(run) {
+			if !k.Paste && (key == "r" || key == "enter") {
+				return m.reconnectTerminal()
+			}
+			m.status = "Session ended. r: reconnect, Ctrl+W: close, Ctrl+]: AWS workspace."
+			return nil
+		}
 		text := ""
 		if k.Type == tea.KeyRunes {
 			text = string(k.Runes)

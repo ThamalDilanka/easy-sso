@@ -39,6 +39,48 @@ func (m *Model) scrollTerminal(lines int, wheel bool, x, y int) tea.Cmd {
 	return nil
 }
 
+// terminalEnded reports a tab whose shell has stopped: the run record says so,
+// or the owned PTY already exited ahead of the next sessions refresh.
+func (m *Model) terminalEnded(run domain.Run) bool {
+	return run.State == "Ended" || run.State == "Failed" || m.services.Terminals.Exited(run.ID)
+}
+
+// reconnectTerminal asks the session owner for a replacement shell built from
+// the ended run's frozen identity; the tab is swapped only on success.
+func (m *Model) reconnectTerminal() tea.Cmd {
+	if m.busy {
+		return nil
+	}
+	run, ok := m.embeddedRun()
+	if !ok {
+		return nil
+	}
+	owner, ok := m.services.Sessions.(interface {
+		Reopen(context.Context, string) (domain.Run, error)
+	})
+	if !ok {
+		m.status = "Reconnect is unavailable for this session owner."
+		return nil
+	}
+	m.terminalFocus = true
+	m.reconnectFrom = run.ID
+	return m.operation("Reconnect terminal", func(ctx context.Context) (domain.Run, domain.ImportPlan, error) {
+		r, err := owner.Reopen(ctx, run.ID)
+		return r, domain.ImportPlan{}, err
+	})
+}
+
+func (m *Model) replaceTerminalTab(oldID string, r domain.Run) {
+	for i, tab := range m.terminalTabs {
+		if tab.ID == oldID {
+			m.terminalTabs[i] = r
+			m.terminalID, m.terminalFocus = r.ID, true
+			return
+		}
+	}
+	m.showTerminal(r)
+}
+
 // Terminal selection is independent of the AWS workspace selection and profile.
 func (m *Model) embeddedRun() (domain.Run, bool) {
 	if m.services.Terminals != nil && m.services.Terminals.Has(m.terminalID) {
@@ -122,16 +164,33 @@ func (m *Model) terminalView() string {
 		m.selectTab(0)
 		return m.workspaceView()
 	}
+	p := m.palette()
+	ended := run.Connection.Kind == "ec2" && m.terminalEnded(run)
 	if (run.State == "Failed" || run.Connection.IAMDatabase()) && run.Error != "" {
-		p := m.palette()
 		notice := wrapLines([]string{"Connection failed: " + run.Error}, max(1, m.width-4))
 		for _, line := range notice[:min(len(notice), max(1, m.height/3))] {
 			lines = append(lines, m.paint(padLine("  "+line, m.width), p.red, p.background, true))
 		}
+	} else if ended {
+		reason := run.Error
+		if reason == "" {
+			reason = "the SSM client exited"
+		}
+		notice := wrapLines([]string{"Session ended: " + reason}, max(1, m.width-4))
+		for _, line := range notice[:min(len(notice), max(1, m.height/3))] {
+			lines = append(lines, m.paint(padLine("  "+line, m.width), p.orange, p.background, true))
+		}
+	}
+	if ended {
+		action := "r / Enter: reconnect with the same credentials | Ctrl+W: close | Ctrl+]: AWS"
+		m.hit(2, len(lines), lipgloss.Width(action), mouseAction{kind: "key", key: "r"})
+		lines = append(lines, m.paint(padLine("  "+action, m.width), p.orange, p.background, false))
 	}
 	lines = append(lines, m.terminalPane(run, m.width, max(1, m.height-len(lines)-1), 0, len(lines))...)
-	p := m.palette()
 	hint := "Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history"
+	if ended {
+		hint = "r / Enter: reconnect | Ctrl+W: close | Ctrl+]: AWS | Alt+PgUp/PgDn: history"
+	}
 	if offset, history := m.services.Terminals.ScrollPosition(run.ID); offset > 0 {
 		hint = fmt.Sprintf("History: %d of %d lines above | any key: back to live | Alt+PgUp/PgDn: scroll", offset, history)
 	}

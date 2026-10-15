@@ -100,12 +100,22 @@ type fakeSessions struct {
 	runs                        []domain.Run
 	opened                      []domain.Connection
 	stopped, focused, rechecked []string
+	reopened                    []string
+	reopenRun                   domain.Run
+	reopenErr                   error
 	shutdowns                   int
 	fail                        error
 	connections                 *fakeConnections
 }
 
 func (f *fakeSessions) List() []domain.Run { return append([]domain.Run(nil), f.runs...) }
+func (f *fakeSessions) Reopen(_ context.Context, id string) (domain.Run, error) {
+	f.reopened = append(f.reopened, id)
+	if f.reopenErr != nil {
+		return domain.Run{}, f.reopenErr
+	}
+	return f.reopenRun, nil
+}
 func (f *fakeSessions) Open(_ context.Context, c domain.Connection, r domain.ManagedRole, _ domain.Snapshot) (domain.Run, error) {
 	if f.fail != nil {
 		return domain.Run{}, f.fail

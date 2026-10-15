@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/terminal"
@@ -418,5 +419,78 @@ func TestCloseIconStopsItsOwnTab(t *testing.T) {
 	clickHit(f.m, mouseHit(t, f.m, "tab-close", "", 1))
 	if len(f.sessions.stopped) != 1 || f.sessions.stopped[0] != "one" || terminals.Has("one") || !terminals.Has("two") {
 		t.Fatal("close icon stopped wrong shell")
+	}
+}
+
+func TestEndedTabShowsReasonReleasesKeysAndReconnects(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"alpha": "Cannot perform start session: write tcp 10.0.0.2:46944->10.0.0.3:443: write: broken pipe"}, exited: map[string]bool{"alpha": true}}
+	f.m.services.Terminals = terminals
+	run := domain.Run{ID: "alpha", Connection: domain.Connection{Name: "alpha", Kind: "ec2"}, State: "Ended", Error: "official SSM client exited; remote termination is unconfirmed"}
+	f.m.showTerminal(run)
+	view := f.m.View()
+	for _, want := range []string{"Session ended", "official SSM client exited", "broken pipe", "r / Enter: reconnect", "Ctrl+W: close"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("ended tab lacks %q:\n%s", want, view)
+		}
+	}
+	if !strings.Contains(f.m.footer(), "Session ended") {
+		t.Fatalf("footer still promises a live shell: %q", f.m.footer())
+	}
+	key(f.m, "a")
+	key(f.m, "tab")
+	if len(terminals.sent) != 0 {
+		t.Fatalf("keys reached a dead shell: %v", terminals.sent)
+	}
+	if !strings.Contains(f.m.status, "Session ended") {
+		t.Fatalf("status after a stray key: %q", f.m.status)
+	}
+	f.sessions.reopenRun = domain.Run{ID: "alpha2", Connection: run.Connection, State: "Connected"}
+	terminals.frames["alpha2"] = "FRESH SHELL"
+	key(f.m, "r")
+	if len(f.sessions.reopened) != 1 || f.sessions.reopened[0] != "alpha" {
+		t.Fatalf("reconnect did not reopen the ended run: %v", f.sessions.reopened)
+	}
+	if len(f.m.terminalTabs) != 1 || f.m.terminalTabs[0].ID != "alpha2" || f.m.terminalID != "alpha2" || !f.m.terminalFocus {
+		t.Fatalf("tab not replaced in place: %+v", f.m.terminalTabs)
+	}
+	if v := f.m.View(); !strings.Contains(v, "FRESH SHELL") || strings.Contains(v, "Session ended") {
+		t.Fatalf("replacement shell not shown:\n%s", v)
+	}
+	if f.m.status != "Terminal reconnected." {
+		t.Fatalf("status %q", f.m.status)
+	}
+	key(f.m, "a")
+	if len(terminals.sent) != 1 || terminals.sent[0] != "alpha2:a" {
+		t.Fatalf("keys do not reach the replacement shell: %v", terminals.sent)
+	}
+}
+
+func TestReconnectFailureKeepsEndedTab(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"alpha": "dead"}, exited: map[string]bool{"alpha": true}}
+	f.m.services.Terminals = terminals
+	f.m.showTerminal(domain.Run{ID: "alpha", Connection: domain.Connection{Name: "alpha", Kind: "ec2"}, State: "Ended"})
+	f.sessions.reopenErr = errors.New("frozen credentials have expired; renew the role and connect again from EC2")
+	clickHit(f.m, mouseHit(t, f.m, "key", "r", 0))
+	if len(f.sessions.reopened) != 1 {
+		t.Fatal("banner button did not reconnect")
+	}
+	if len(f.m.terminalTabs) != 1 || f.m.terminalTabs[0].ID != "alpha" || f.m.terminalID != "alpha" {
+		t.Fatalf("failed reconnect changed tabs: %+v", f.m.terminalTabs)
+	}
+	if v := f.m.View(); !strings.Contains(v, "Session ended") || !strings.Contains(f.m.status, "expired") {
+		t.Fatalf("status %q view:\n%s", f.m.status, v)
+	}
+}
+
+func TestEndedTabWithoutErrorStillShowsBanner(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"alpha": "Exiting session with sessionId: s-0123456789abcdef0."}, exited: map[string]bool{"alpha": true}}
+	f.m.services.Terminals = terminals
+	// The sessions refresh has not caught up yet, but the owned PTY already exited.
+	f.m.showTerminal(domain.Run{ID: "alpha", Connection: domain.Connection{Name: "alpha", Kind: "ec2"}, State: "Connected"})
+	if v := f.m.View(); !strings.Contains(v, "Session ended: the SSM client exited") {
+		t.Fatalf("no banner for an exited PTY:\n%s", v)
 	}
 }
