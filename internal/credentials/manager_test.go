@@ -354,3 +354,157 @@ func TestRecoveryPublicationAndPartialRemoval(t *testing.T) {
 		t.Fatal(roles, err)
 	}
 }
+
+func TestPauseParksKeysAndResumeRestoresThem(t *testing.T) {
+	m, _, selections := setup(t)
+	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
+		t.Fatal(err)
+	}
+	alias := selections[0].Alias
+	before, err := os.ReadFile(m.credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(alias); err != nil {
+		t.Fatal(err)
+	}
+	creds, _ := os.ReadFile(m.credentials)
+	if strings.Contains(string(creds), "["+alias+"]") || strings.Contains(string(creds), "PRIVATESECRET") {
+		t.Fatal("paused keys still published")
+	}
+	config, _ := os.ReadFile(m.config)
+	if !strings.Contains(string(config), "[profile "+alias+"]") {
+		t.Fatal("pause removed the config section")
+	}
+	roles, err := m.List()
+	if err != nil || len(roles) != 1 || roles[0].Status != "paused" || !roles[0].Paused {
+		t.Fatal(roles, err)
+	}
+	if _, _, err := m.Snapshot(alias); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("paused snapshot: %v", err)
+	}
+	if err := m.Pause(alias); err == nil {
+		t.Fatal("double pause accepted")
+	}
+	entries, _ := os.ReadDir(m.state)
+	for _, e := range entries {
+		b, _ := os.ReadFile(filepath.Join(m.state, e.Name()))
+		if strings.Contains(string(b), "PRIVATESECRET") || strings.Contains(string(b), "PRIVATETOKEN") {
+			t.Fatalf("parked secret written to %s", e.Name())
+		}
+	}
+	if err := m.Resume(alias); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(m.credentials); string(after) != string(before) {
+		t.Fatalf("resume did not restore the exact section:\n%s\n---\n%s", before, after)
+	}
+	roles, _ = m.List()
+	if roles[0].Status != "active" || roles[0].Paused {
+		t.Fatal("resumed role not active", roles)
+	}
+	if _, snap, err := m.Snapshot(alias); err != nil || snap.SecretAccessKey != "PRIVATESECRET" {
+		t.Fatal("resumed snapshot unusable", err)
+	}
+	if err := m.Resume(alias); err == nil {
+		t.Fatal("resume of an active role accepted")
+	}
+	if err := m.Pause(alias); err != nil {
+		t.Fatal(err)
+	}
+	state, _ := m.readState()
+	state.Roles[0].Expiration = time.Now().Add(-time.Minute)
+	if err := m.writeState(state); err != nil {
+		t.Fatal(err)
+	}
+	roles, _ = m.List()
+	if roles[0].Status != "expired" {
+		t.Fatal("paused and expired role not shown as expired", roles)
+	}
+	if err := m.Resume(alias); err == nil || !strings.Contains(err.Error(), "renew") {
+		t.Fatalf("expired resume: %v", err)
+	}
+}
+
+func TestPausedRoleAfterRestartNeedsRenew(t *testing.T) {
+	m, cli, selections := setup(t)
+	alias := selections[0].Alias
+	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(alias); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(cli, m.config, m.credentials, m.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles, err := restarted.List()
+	if err != nil || roles[0].Status != "paused" {
+		t.Fatal(roles, err)
+	}
+	if err := restarted.Resume(alias); err == nil || !strings.Contains(err.Error(), "renew") {
+		t.Fatalf("resume without parked keys: %v", err)
+	}
+	if creds, _ := os.ReadFile(restarted.credentials); strings.Contains(string(creds), "["+alias+"]") {
+		t.Fatal("resume wrote a section without keys")
+	}
+	if _, err := restarted.Activate(context.Background(), selections[:1], true); err != nil {
+		t.Fatal(err)
+	}
+	roles, _ = restarted.List()
+	if roles[0].Status != "active" || roles[0].Paused {
+		t.Fatal("renew left the role paused", roles)
+	}
+	if err := restarted.Pause(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if config, _ := os.ReadFile(restarted.config); strings.Contains(string(config), "[profile "+alias+"]") {
+		t.Fatal("remove left the config section")
+	}
+	if roles, _ = restarted.List(); len(roles) != 0 {
+		t.Fatal("state kept the removed role", roles)
+	}
+}
+
+func TestPauseRefusesExternalEditsAndUnknownAliases(t *testing.T) {
+	m, _, selections := setup(t)
+	alias := selections[0].Alias
+	if err := m.Pause(alias); err == nil {
+		t.Fatal("unmanaged alias paused")
+	}
+	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
+		t.Fatal(err)
+	}
+	creds, _ := os.ReadFile(m.credentials)
+	edited := strings.Replace(string(creds), "aws_session_token", "aws_session_token_edited", 1)
+	if err := os.WriteFile(m.credentials, []byte(edited), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(alias); err == nil || !strings.Contains(err.Error(), "edited") {
+		t.Fatalf("external edit not detected: %v", err)
+	}
+	if after, _ := os.ReadFile(m.credentials); string(after) != edited {
+		t.Fatal("refused pause changed the file")
+	}
+	if err := os.WriteFile(m.credentials, creds, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(alias); err != nil {
+		t.Fatal(err)
+	}
+	// A section re-added by hand while paused is not ours to trust.
+	if err := os.WriteFile(m.credentials, creds, 0600); err != nil {
+		t.Fatal(err)
+	}
+	roles, _ := m.List()
+	if roles[0].Status != "unknown" {
+		t.Fatal("re-added section not flagged", roles)
+	}
+	if err := m.Resume(alias); err == nil {
+		t.Fatal("resume over an external section accepted")
+	}
+}

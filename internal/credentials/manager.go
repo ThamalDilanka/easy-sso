@@ -24,6 +24,9 @@ type Manager struct {
 	cli                        domain.CredentialCLI
 	config, credentials, state string
 	mu                         sync.Mutex
+	// parked holds the exact credentials section of each paused alias. It is
+	// never written to disk, so pausing leaves no key material in any file.
+	parked map[string]string
 }
 type metadata struct {
 	Version int                  `json:"version"`
@@ -191,6 +194,15 @@ func (m *Manager) List() ([]domain.ManagedRole, error) {
 		switch {
 		case r.Status == "unknown":
 			r.Status = "unknown"
+		case r.Paused:
+			switch {
+			case exists || e != nil || f != r.Fingerprint || cleanup == nil:
+				r.Status = "unknown"
+			case !r.Expiration.After(time.Now()):
+				r.Status = "expired"
+			default:
+				r.Status = "paused"
+			}
 		case !exists:
 			r.Status = "missing"
 		case e != nil || f != r.Fingerprint:
@@ -237,6 +249,9 @@ func (m *Manager) Snapshot(alias string) (domain.ManagedRole, domain.Snapshot, e
 		}
 		if r.Status == "unknown" {
 			return r, domain.Snapshot{}, errors.New("credential publication was interrupted; explicitly renew this role before connecting")
+		}
+		if r.Paused {
+			return r, domain.Snapshot{}, errors.New("credentials are paused; resume them in Credentials before connecting")
 		}
 		if _, exists, e := section(creds, alias); e != nil {
 			return r, domain.Snapshot{}, e
@@ -457,6 +472,9 @@ func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, a
 	if err = os.Remove(m.path("publication-pending.json")); err != nil {
 		return nil, err
 	}
+	for _, r := range batch {
+		delete(m.parked, r.Alias)
+	}
 	return batch, nil
 }
 func (m *Manager) RetryCleanup(ctx context.Context) error {
@@ -536,7 +554,128 @@ func (m *Manager) Remove(alias string) error {
 	if err = m.writeState(s); err != nil {
 		return err
 	}
+	delete(m.parked, alias)
 	return os.Remove(m.path("removal-pending.json"))
+}
+
+// Pause removes the alias's credentials section from the shared file and keeps
+// its exact text only in memory; the config section stays so the profile name
+// remains known. Resume puts the same text back without a new sign-in.
+func (m *Manager) Pause(alias string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.withPublication(func(s *metadata, config, creds []byte) error {
+		for i := range s.Roles {
+			r := &s.Roles[i]
+			if r.Alias != alias {
+				continue
+			}
+			if r.Paused {
+				return errors.New("credentials are already paused")
+			}
+			if r.Status == "unknown" {
+				return errors.New("credential publication was interrupted; renew this role instead")
+			}
+			f, e := fingerprint(config, creds, alias)
+			if e != nil || f != r.Fingerprint {
+				return errors.New("managed profile was externally edited; pause blocked")
+			}
+			text, exists, e := section(creds, alias)
+			if e != nil {
+				return e
+			}
+			if !exists {
+				return errors.New("managed credentials missing; renew this role instead")
+			}
+			next := replace(creds, alias, "")
+			if e = store.AtomicWrite(m.credentials, next); e != nil {
+				return e
+			}
+			if m.parked == nil {
+				m.parked = map[string]string{}
+			}
+			m.parked[alias] = text
+			r.Paused = true
+			if r.Fingerprint, e = fingerprint(config, next, alias); e != nil {
+				return e
+			}
+			return m.writeState(*s)
+		}
+		return errors.New("alias is not application-owned")
+	})
+}
+
+// Resume restores a paused alias's credentials section from memory. After a
+// restart the parked text is gone and the role must be renewed instead.
+func (m *Manager) Resume(alias string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.withPublication(func(s *metadata, config, creds []byte) error {
+		for i := range s.Roles {
+			r := &s.Roles[i]
+			if r.Alias != alias {
+				continue
+			}
+			if !r.Paused {
+				return errors.New("credentials are not paused")
+			}
+			if !r.Expiration.After(time.Now()) {
+				return errors.New("credentials expired while paused; renew the role")
+			}
+			text, ok := m.parked[alias]
+			if !ok {
+				return errors.New("paused keys were dropped when easy-sso exited; renew the role")
+			}
+			if _, exists, e := section(creds, alias); e != nil {
+				return e
+			} else if exists {
+				return errors.New("a profile with this name was added externally while paused; review the credentials file")
+			}
+			f, e := fingerprint(config, creds, alias)
+			if e != nil || f != r.Fingerprint {
+				return errors.New("managed profile was externally edited; resume blocked")
+			}
+			next := replace(creds, alias, text)
+			if e = store.AtomicWrite(m.credentials, next); e != nil {
+				return e
+			}
+			delete(m.parked, alias)
+			r.Paused = false
+			if r.Fingerprint, e = fingerprint(config, next, alias); e != nil {
+				return e
+			}
+			return m.writeState(*s)
+		}
+		return errors.New("alias is not application-owned")
+	})
+}
+
+// withPublication runs fn with the ownership metadata and both AWS files read
+// under the activation and publication locks, like Remove.
+func (m *Manager) withPublication(fn func(s *metadata, config, creds []byte) error) error {
+	unlock, err := lock(m.path("activation.lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	writer, err := lock(m.path("publication.lock"))
+	if err != nil {
+		return err
+	}
+	defer writer()
+	s, err := m.readState()
+	if err != nil {
+		return err
+	}
+	config, err := readFile(m.config, false)
+	if err != nil {
+		return err
+	}
+	creds, err := readFile(m.credentials, true)
+	if err != nil {
+		return err
+	}
+	return fn(&s, config, creds)
 }
 func (m *Manager) recoverPublication() error {
 	pendingRecovery := false

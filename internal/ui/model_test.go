@@ -70,6 +70,21 @@ func (f *fakeCredentials) Remove(alias string) error {
 	return errors.New("not owned")
 }
 func (f *fakeCredentials) RetryCleanup(context.Context) error { f.retries++; f.fail = nil; return nil }
+func (f *fakeCredentials) Pause(alias string) error           { return f.setPaused(alias, true) }
+func (f *fakeCredentials) Resume(alias string) error          { return f.setPaused(alias, false) }
+func (f *fakeCredentials) setPaused(alias string, paused bool) error {
+	if f.fail != nil {
+		return f.fail
+	}
+	for i, r := range f.roles {
+		if r.Alias == alias {
+			f.roles[i].Paused = paused
+			f.roles[i].Status = map[bool]string{true: "paused", false: "active"}[paused]
+			return nil
+		}
+	}
+	return errors.New("not owned")
+}
 
 type fakeConnections struct {
 	items             []domain.Connection

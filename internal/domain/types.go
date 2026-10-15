@@ -41,6 +41,9 @@ type ManagedRole struct {
 	Expiration  time.Time `json:"expiration"`
 	Fingerprint string    `json:"fingerprint"`
 	Status      string    `json:"status"`
+	// Paused means the credentials section is out of the shared file and its
+	// text is parked only in the running application's memory.
+	Paused bool `json:"paused,omitempty"`
 }
 type Connection struct {
 	ID              string     `json:"id"`
@@ -117,6 +120,9 @@ type CredentialService interface {
 	Snapshot(string) (ManagedRole, Snapshot, error)
 	Remove(string) error
 	RetryCleanup(context.Context) error
+	// Pause takes a role's credentials out of the shared file until Resume.
+	Pause(string) error
+	Resume(string) error
 }
 type ConnectionService interface {
 	List() ([]Connection, error)
