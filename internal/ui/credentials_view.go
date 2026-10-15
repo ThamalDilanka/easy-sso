@@ -66,10 +66,10 @@ func (m *Model) identityCredentialStatus(p domain.Profile) string {
 		if sameProfile(r.Profile, p) && roleActive(r) {
 			return "active · " + credentialCountdown(r.Expiration, time.Now())
 		}
-		paused = paused || (sameProfile(r.Profile, p) && rolePaused(r))
+		paused = paused || (sameProfile(r.Profile, p) && roleUnpublished(r))
 	}
 	if paused {
-		return "paused · resume in Credentials (p)"
+		return "unpublished · republish in Credentials (u)"
 	}
 	return m.loginStatus(p)
 }
@@ -89,15 +89,15 @@ func (m *Model) copyProfileName(r domain.ManagedRole) tea.Cmd {
 	}
 }
 
-// pauseOrResume toggles whether the role's entry is present in the AWS
+// togglePublication toggles whether the role's entry is present in the AWS
 // credentials file; the same handler serves the key, the button and the review.
-func (m *Model) pauseOrResume(r domain.ManagedRole) tea.Cmd {
+func (m *Model) togglePublication(r domain.ManagedRole) tea.Cmd {
 	if m.services.Credentials == nil {
 		return nil
 	}
-	action, call := "Pause credentials", m.services.Credentials.Pause
-	if rolePaused(r) {
-		action, call = "Resume credentials", m.services.Credentials.Resume
+	action, call := "Unpublish credentials", m.services.Credentials.Unpublish
+	if roleUnpublished(r) {
+		action, call = "Republish credentials", m.services.Credentials.Republish
 	}
 	alias := r.Alias
 	return m.operation(action, func(context.Context) (domain.Run, domain.ImportPlan, error) {

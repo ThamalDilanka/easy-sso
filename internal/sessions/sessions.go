@@ -870,7 +870,7 @@ func (m *Manager) Reopen(ctx context.Context, id string) (domain.Run, error) {
 	if snapshot.AccessKeyID == "" || !snapshot.Expiration.After(time.Now()) {
 		return domain.Run{}, errors.New("frozen credentials have expired; renew the role and connect again from EC2")
 	}
-	// The role must still be usable in Credentials: a paused or removed role
+	// The role must still be usable in Credentials: an unpublished or removed role
 	// opens no new shells, not even from its own frozen snapshot.
 	if m.options.RecoveryCredentials != nil {
 		if _, _, err := m.options.RecoveryCredentials(frozen.Alias); err != nil {

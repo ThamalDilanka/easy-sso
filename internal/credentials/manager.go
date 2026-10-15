@@ -24,7 +24,7 @@ type Manager struct {
 	cli                        domain.CredentialCLI
 	config, credentials, state string
 	mu                         sync.Mutex
-	// parked holds the exact credentials section of each paused alias. It is
+	// parked holds the exact credentials section of each unpublished alias. It is
 	// never written to disk, so pausing leaves no key material in any file.
 	parked map[string]string
 }
@@ -194,14 +194,14 @@ func (m *Manager) List() ([]domain.ManagedRole, error) {
 		switch {
 		case r.Status == "unknown":
 			r.Status = "unknown"
-		case r.Paused:
+		case r.Unpublished:
 			switch {
 			case exists || e != nil || f != r.Fingerprint || cleanup == nil:
 				r.Status = "unknown"
 			case !r.Expiration.After(time.Now()):
 				r.Status = "expired"
 			default:
-				r.Status = "paused"
+				r.Status = "unpublished"
 			}
 		case !exists:
 			r.Status = "missing"
@@ -250,8 +250,8 @@ func (m *Manager) Snapshot(alias string) (domain.ManagedRole, domain.Snapshot, e
 		if r.Status == "unknown" {
 			return r, domain.Snapshot{}, errors.New("credential publication was interrupted; explicitly renew this role before connecting")
 		}
-		if r.Paused {
-			return r, domain.Snapshot{}, errors.New("credentials are paused; resume them in Credentials before connecting")
+		if r.Unpublished {
+			return r, domain.Snapshot{}, errors.New("credentials are unpublished; republish them in Credentials before connecting")
 		}
 		if _, exists, e := section(creds, alias); e != nil {
 			return r, domain.Snapshot{}, e
@@ -558,10 +558,10 @@ func (m *Manager) Remove(alias string) error {
 	return os.Remove(m.path("removal-pending.json"))
 }
 
-// Pause removes the alias's credentials section from the shared file and keeps
-// its exact text only in memory; the config section stays so the profile name
-// remains known. Resume puts the same text back without a new sign-in.
-func (m *Manager) Pause(alias string) error {
+// Unpublish removes the alias's credentials section from the shared file and
+// keeps its exact text only in memory; the config section stays so the profile
+// name remains known. Republish puts the same text back without a new sign-in.
+func (m *Manager) Unpublish(alias string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.withPublication(func(s *metadata, config, creds []byte) error {
@@ -570,15 +570,15 @@ func (m *Manager) Pause(alias string) error {
 			if r.Alias != alias {
 				continue
 			}
-			if r.Paused {
-				return errors.New("credentials are already paused")
+			if r.Unpublished {
+				return errors.New("credentials are already unpublished")
 			}
 			if r.Status == "unknown" {
 				return errors.New("credential publication was interrupted; renew this role instead")
 			}
 			f, e := fingerprint(config, creds, alias)
 			if e != nil || f != r.Fingerprint {
-				return errors.New("managed profile was externally edited; pause blocked")
+				return errors.New("managed profile was externally edited; unpublish blocked")
 			}
 			text, exists, e := section(creds, alias)
 			if e != nil {
@@ -595,7 +595,7 @@ func (m *Manager) Pause(alias string) error {
 				m.parked = map[string]string{}
 			}
 			m.parked[alias] = text
-			r.Paused = true
+			r.Unpublished = true
 			if r.Fingerprint, e = fingerprint(config, next, alias); e != nil {
 				return e
 			}
@@ -605,9 +605,9 @@ func (m *Manager) Pause(alias string) error {
 	})
 }
 
-// Resume restores a paused alias's credentials section from memory. After a
-// restart the parked text is gone and the role must be renewed instead.
-func (m *Manager) Resume(alias string) error {
+// Republish restores an unpublished alias's credentials section from memory.
+// After a restart the held text is gone and the role must be renewed instead.
+func (m *Manager) Republish(alias string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.withPublication(func(s *metadata, config, creds []byte) error {
@@ -616,24 +616,24 @@ func (m *Manager) Resume(alias string) error {
 			if r.Alias != alias {
 				continue
 			}
-			if !r.Paused {
-				return errors.New("credentials are not paused")
+			if !r.Unpublished {
+				return errors.New("credentials are published already")
 			}
 			if !r.Expiration.After(time.Now()) {
-				return errors.New("credentials expired while paused; renew the role")
+				return errors.New("credentials expired while unpublished; renew the role")
 			}
 			text, ok := m.parked[alias]
 			if !ok {
-				return errors.New("paused keys were dropped when easy-sso exited; renew the role")
+				return errors.New("unpublished keys are gone after a restart; renew the role")
 			}
 			if _, exists, e := section(creds, alias); e != nil {
 				return e
 			} else if exists {
-				return errors.New("a profile with this name was added externally while paused; review the credentials file")
+				return errors.New("a profile with this name was added externally while unpublished; review the credentials file")
 			}
 			f, e := fingerprint(config, creds, alias)
 			if e != nil || f != r.Fingerprint {
-				return errors.New("managed profile was externally edited; resume blocked")
+				return errors.New("managed profile was externally edited; republish blocked")
 			}
 			// The exact text returns, appended at the end of the file; its
 			// position is not restored and the fingerprint does not depend on it.
@@ -642,7 +642,7 @@ func (m *Manager) Resume(alias string) error {
 				return e
 			}
 			delete(m.parked, alias)
-			r.Paused = false
+			r.Unpublished = false
 			if r.Fingerprint, e = fingerprint(config, next, alias); e != nil {
 				return e
 			}

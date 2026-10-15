@@ -16,21 +16,21 @@ func roleActive(r domain.ManagedRole) bool {
 	return strings.EqualFold(r.Status, "active") && r.Expiration.After(time.Now())
 }
 
-// rolePaused reports a role whose entry is out of the credentials file while
-// its keys are parked and still valid; an expired or edited paused role is
-// reported by its real status so the user is sent to Renew, not Resume.
-func rolePaused(r domain.ManagedRole) bool {
-	return managedStatus(r) == "paused"
+// roleUnpublished reports a role whose entry is out of the credentials file
+// while its keys are held and still valid; an expired or edited one is reported
+// by its real status so the user is sent to Renew, not Republish.
+func roleUnpublished(r domain.ManagedRole) bool {
+	return managedStatus(r) == "unpublished"
 }
 
-// selectedProfileActive also counts paused roles, so Log out stays available.
+// selectedProfileActive also counts unpublished roles, so Log out stays available.
 func (m *Model) selectedProfileActive() bool {
 	p, ok := m.profile()
 	if !ok {
 		return false
 	}
 	for _, r := range m.roles {
-		if sameProfile(r.Profile, p) && (roleActive(r) || rolePaused(r)) {
+		if sameProfile(r.Profile, p) && (roleActive(r) || roleUnpublished(r)) {
 			return true
 		}
 	}

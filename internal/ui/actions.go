@@ -216,9 +216,9 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		if p, ok := m.profile(); ok {
 			m.form = &form{kind: "alias", fields: []field{{"Account label", m.accountAlias(p.AccountID)}}}
 		}
-	case "p":
+	case "u":
 		if m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
-			return m.pauseOrResume(m.roles[m.selectedRow])
+			return m.togglePublication(m.roles[m.selectedRow])
 		}
 	case "f":
 		if m.screen == sessions || m.screen == tunnels {

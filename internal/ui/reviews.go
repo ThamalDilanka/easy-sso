@@ -136,8 +136,8 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if key == "r" {
 			m.renewRole(r.role)
 		}
-		if key == "p" {
-			return m.pauseOrResume(r.role)
+		if key == "u" {
+			return m.togglePublication(r.role)
 		}
 		if key == "c" {
 			return m.copyProfileName(r.role)

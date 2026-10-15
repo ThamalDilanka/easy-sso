@@ -70,16 +70,16 @@ func (f *fakeCredentials) Remove(alias string) error {
 	return errors.New("not owned")
 }
 func (f *fakeCredentials) RetryCleanup(context.Context) error { f.retries++; f.fail = nil; return nil }
-func (f *fakeCredentials) Pause(alias string) error           { return f.setPaused(alias, true) }
-func (f *fakeCredentials) Resume(alias string) error          { return f.setPaused(alias, false) }
-func (f *fakeCredentials) setPaused(alias string, paused bool) error {
+func (f *fakeCredentials) Unpublish(alias string) error       { return f.setPublished(alias, false) }
+func (f *fakeCredentials) Republish(alias string) error       { return f.setPublished(alias, true) }
+func (f *fakeCredentials) setPublished(alias string, published bool) error {
 	if f.fail != nil {
 		return f.fail
 	}
 	for i, r := range f.roles {
 		if r.Alias == alias {
-			f.roles[i].Paused = paused
-			f.roles[i].Status = map[bool]string{true: "paused", false: "active"}[paused]
+			f.roles[i].Unpublished = !published
+			f.roles[i].Status = map[bool]string{true: "active", false: "unpublished"}[published]
 			return nil
 		}
 	}

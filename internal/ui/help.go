@@ -61,7 +61,7 @@ func shortcutGroups() []shortcutGroup {
 			{"d", "Review removal of the selected managed credentials."},
 			{"c", "Copy the published profile name (the value for --profile) to the clipboard."},
 			{"R", "Retry pending AWS CLI SSO cleanup (uppercase R)."},
-			{"p", "Pause or resume: a paused role is taken out of the AWS credentials file and its keys stay only in this app's memory until resumed; exiting drops them."},
+			{"u", "Unpublish or republish: an unpublished role's entry is taken out of the AWS credentials file and its keys stay only in this app's memory until you republish; exiting drops them."},
 		}},
 		{"BACKUP", []shortcut{
 			{"e", "Export bookmarks to a new file."},

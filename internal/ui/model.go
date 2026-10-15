@@ -398,12 +398,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "AWS CLI SSO cleanup complete. Selected role credentials published."
 		case "Retry cleanup":
 			m.status = "AWS CLI SSO cleanup complete. Activate roles again to publish a new batch."
-		case "Pause credentials":
+		case "Unpublish credentials":
 			m.review = nil
-			m.status = "Credentials paused: the profile entry is out of the AWS credentials file until you resume it (p). Its keys stay only in this app's memory."
-		case "Resume credentials":
+			m.status = "Credentials unpublished: the profile entry is out of the AWS credentials file until you republish it (u). Its keys stay only in this app's memory."
+		case "Republish credentials":
 			m.review = nil
-			m.status = "Credentials resumed: the profile entry is back in the AWS credentials file."
+			m.status = "Credentials republished: the profile entry is back in the AWS credentials file."
 		case "Open connection":
 			if (x.run.Connection.Kind == "ec2" || x.run.Connection.IAMDatabase()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
 				m.pendingTarget = x.run.Connection.ID

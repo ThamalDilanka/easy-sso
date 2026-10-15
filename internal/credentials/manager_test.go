@@ -355,7 +355,7 @@ func TestRecoveryPublicationAndPartialRemoval(t *testing.T) {
 	}
 }
 
-func TestPauseParksKeysAndResumeRestoresThem(t *testing.T) {
+func TestUnpublishParksKeysAndRepublishRestoresThem(t *testing.T) {
 	m, _, selections := setup(t)
 	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
 		t.Fatal(err)
@@ -365,26 +365,26 @@ func TestPauseParksKeysAndResumeRestoresThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Pause(alias); err != nil {
+	if err := m.Unpublish(alias); err != nil {
 		t.Fatal(err)
 	}
 	creds, _ := os.ReadFile(m.credentials)
 	if strings.Contains(string(creds), "["+alias+"]") || strings.Contains(string(creds), "PRIVATESECRET") {
-		t.Fatal("paused keys still published")
+		t.Fatal("unpublished keys still in the file")
 	}
 	config, _ := os.ReadFile(m.config)
 	if !strings.Contains(string(config), "[profile "+alias+"]") {
-		t.Fatal("pause removed the config section")
+		t.Fatal("unpublish removed the config section")
 	}
 	roles, err := m.List()
-	if err != nil || len(roles) != 1 || roles[0].Status != "paused" || !roles[0].Paused {
+	if err != nil || len(roles) != 1 || roles[0].Status != "unpublished" || !roles[0].Unpublished {
 		t.Fatal(roles, err)
 	}
-	if _, _, err := m.Snapshot(alias); err == nil || !strings.Contains(err.Error(), "paused") {
-		t.Fatalf("paused snapshot: %v", err)
+	if _, _, err := m.Snapshot(alias); err == nil || !strings.Contains(err.Error(), "unpublished") {
+		t.Fatalf("unpublished snapshot: %v", err)
 	}
-	if err := m.Pause(alias); err == nil {
-		t.Fatal("double pause accepted")
+	if err := m.Unpublish(alias); err == nil {
+		t.Fatal("double unpublish accepted")
 	}
 	entries, _ := os.ReadDir(m.state)
 	for _, e := range entries {
@@ -393,23 +393,23 @@ func TestPauseParksKeysAndResumeRestoresThem(t *testing.T) {
 			t.Fatalf("parked secret written to %s", e.Name())
 		}
 	}
-	if err := m.Resume(alias); err != nil {
+	if err := m.Republish(alias); err != nil {
 		t.Fatal(err)
 	}
 	if after, _ := os.ReadFile(m.credentials); string(after) != string(before) {
-		t.Fatalf("resume did not restore the exact section:\n%s\n---\n%s", before, after)
+		t.Fatalf("republish did not restore the exact section:\n%s\n---\n%s", before, after)
 	}
 	roles, _ = m.List()
-	if roles[0].Status != "active" || roles[0].Paused {
-		t.Fatal("resumed role not active", roles)
+	if roles[0].Status != "active" || roles[0].Unpublished {
+		t.Fatal("republished role not active", roles)
 	}
 	if _, snap, err := m.Snapshot(alias); err != nil || snap.SecretAccessKey != "PRIVATESECRET" {
-		t.Fatal("resumed snapshot unusable", err)
+		t.Fatal("republished snapshot unusable", err)
 	}
-	if err := m.Resume(alias); err == nil {
-		t.Fatal("resume of an active role accepted")
+	if err := m.Republish(alias); err == nil {
+		t.Fatal("republish of a published role accepted")
 	}
-	if err := m.Pause(alias); err != nil {
+	if err := m.Unpublish(alias); err != nil {
 		t.Fatal(err)
 	}
 	state, _ := m.readState()
@@ -419,20 +419,20 @@ func TestPauseParksKeysAndResumeRestoresThem(t *testing.T) {
 	}
 	roles, _ = m.List()
 	if roles[0].Status != "expired" {
-		t.Fatal("paused and expired role not shown as expired", roles)
+		t.Fatal("unpublished and expired role not shown as expired", roles)
 	}
-	if err := m.Resume(alias); err == nil || !strings.Contains(err.Error(), "renew") {
-		t.Fatalf("expired resume: %v", err)
+	if err := m.Republish(alias); err == nil || !strings.Contains(err.Error(), "renew") {
+		t.Fatalf("expired republish: %v", err)
 	}
 }
 
-func TestPausedRoleAfterRestartNeedsRenew(t *testing.T) {
+func TestUnpublishedRoleAfterRestartNeedsRenew(t *testing.T) {
 	m, cli, selections := setup(t)
 	alias := selections[0].Alias
 	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Pause(alias); err != nil {
+	if err := m.Unpublish(alias); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := New(cli, m.config, m.credentials, m.state)
@@ -440,23 +440,23 @@ func TestPausedRoleAfterRestartNeedsRenew(t *testing.T) {
 		t.Fatal(err)
 	}
 	roles, err := restarted.List()
-	if err != nil || roles[0].Status != "paused" {
+	if err != nil || roles[0].Status != "unpublished" {
 		t.Fatal(roles, err)
 	}
-	if err := restarted.Resume(alias); err == nil || !strings.Contains(err.Error(), "renew") {
-		t.Fatalf("resume without parked keys: %v", err)
+	if err := restarted.Republish(alias); err == nil || !strings.Contains(err.Error(), "renew") {
+		t.Fatalf("republish without parked keys: %v", err)
 	}
 	if creds, _ := os.ReadFile(restarted.credentials); strings.Contains(string(creds), "["+alias+"]") {
-		t.Fatal("resume wrote a section without keys")
+		t.Fatal("republish wrote a section without keys")
 	}
 	if _, err := restarted.Activate(context.Background(), selections[:1], true); err != nil {
 		t.Fatal(err)
 	}
 	roles, _ = restarted.List()
-	if roles[0].Status != "active" || roles[0].Paused {
-		t.Fatal("renew left the role paused", roles)
+	if roles[0].Status != "active" || roles[0].Unpublished {
+		t.Fatal("renew left the role unpublished", roles)
 	}
-	if err := restarted.Pause(alias); err != nil {
+	if err := restarted.Unpublish(alias); err != nil {
 		t.Fatal(err)
 	}
 	if err := restarted.Remove(alias); err != nil {
@@ -470,11 +470,11 @@ func TestPausedRoleAfterRestartNeedsRenew(t *testing.T) {
 	}
 }
 
-func TestPauseRefusesExternalEditsAndUnknownAliases(t *testing.T) {
+func TestUnpublishRefusesExternalEditsAndUnknownAliases(t *testing.T) {
 	m, _, selections := setup(t)
 	alias := selections[0].Alias
-	if err := m.Pause(alias); err == nil {
-		t.Fatal("unmanaged alias paused")
+	if err := m.Unpublish(alias); err == nil {
+		t.Fatal("unmanaged alias unpublished")
 	}
 	if _, err := m.Activate(context.Background(), selections[:1], true); err != nil {
 		t.Fatal(err)
@@ -484,19 +484,19 @@ func TestPauseRefusesExternalEditsAndUnknownAliases(t *testing.T) {
 	if err := os.WriteFile(m.credentials, []byte(edited), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Pause(alias); err == nil || !strings.Contains(err.Error(), "edited") {
+	if err := m.Unpublish(alias); err == nil || !strings.Contains(err.Error(), "edited") {
 		t.Fatalf("external edit not detected: %v", err)
 	}
 	if after, _ := os.ReadFile(m.credentials); string(after) != edited {
-		t.Fatal("refused pause changed the file")
+		t.Fatal("refused unpublish changed the file")
 	}
 	if err := os.WriteFile(m.credentials, creds, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Pause(alias); err != nil {
+	if err := m.Unpublish(alias); err != nil {
 		t.Fatal(err)
 	}
-	// A section re-added by hand while paused is not ours to trust.
+	// A section re-added by hand while unpublished is not ours to trust.
 	if err := os.WriteFile(m.credentials, creds, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +504,7 @@ func TestPauseRefusesExternalEditsAndUnknownAliases(t *testing.T) {
 	if roles[0].Status != "unknown" {
 		t.Fatal("re-added section not flagged", roles)
 	}
-	if err := m.Resume(alias); err == nil {
-		t.Fatal("resume over an external section accepted")
+	if err := m.Republish(alias); err == nil {
+		t.Fatal("republish over an external section accepted")
 	}
 }

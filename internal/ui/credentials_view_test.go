@@ -128,7 +128,7 @@ func TestCredentialsViewShowsPublishedProfileNameAndCopiesIt(t *testing.T) {
 	f.m.services.CopyText = func(text string) error { copied = text; return nil }
 	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
 	view := f.m.View()
-	for _, want := range []string{"PROFILE", "easy-sso-managed-one", "Use: --profile easy-sso-managed-one", "Copy profile", "Pause"} {
+	for _, want := range []string{"PROFILE", "easy-sso-managed-one", "Use: --profile easy-sso-managed-one", "Copy profile", "Unpublish"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q:\n%s", want, view)
 		}
@@ -166,63 +166,63 @@ func TestCopyProfileNameReportsClipboardFailure(t *testing.T) {
 	}
 }
 
-func TestPauseAndResumeFromCredentialsView(t *testing.T) {
+func TestUnpublishAndRepublishFromCredentialsView(t *testing.T) {
 	f := setupUI(t)
 	p, _ := f.m.profile()
 	f.creds.roles = []domain.ManagedRole{{Alias: "easy-sso-managed-one", Profile: p, Status: "active", Expiration: time.Now().Add(time.Hour)}}
 	finish(f.m, f.m.load())
 	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
-	key(f.m, "p")
-	if !f.creds.roles[0].Paused || !strings.Contains(f.m.status, "paused") {
-		t.Fatalf("pause: roles=%+v status=%q", f.creds.roles, f.m.status)
+	key(f.m, "u")
+	if !f.creds.roles[0].Unpublished || !strings.Contains(f.m.status, "unpublished") {
+		t.Fatalf("unpublish: roles=%+v status=%q", f.creds.roles, f.m.status)
 	}
 	view := f.m.View()
-	for _, want := range []string{"paused", "Resume"} {
+	for _, want := range []string{"unpublished", "Republish"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("missing %q after pause:\n%s", want, view)
+			t.Fatalf("missing %q after unpublish:\n%s", want, view)
 		}
 	}
 	if f.m.accountActionLabel() != "Log out" {
-		t.Fatal("paused role lost the Log out action")
+		t.Fatal("unpublished role lost the Log out action")
 	}
-	clickHit(f.m, mouseHit(t, f.m, "key", "p", 0))
-	if f.creds.roles[0].Paused || !strings.Contains(f.m.status, "resumed") {
-		t.Fatalf("resume: roles=%+v status=%q", f.creds.roles, f.m.status)
+	clickHit(f.m, mouseHit(t, f.m, "key", "u", 0))
+	if f.creds.roles[0].Unpublished || !strings.Contains(f.m.status, "republished") {
+		t.Fatalf("republish: roles=%+v status=%q", f.creds.roles, f.m.status)
 	}
-	key(f.m, "p")
+	key(f.m, "u")
 	key(f.m, "q")
-	if v := f.m.View(); !strings.Contains(v, "paused") {
-		t.Fatalf("exit review silent about paused keys:\n%s", v)
+	if v := f.m.View(); !strings.Contains(v, "unpublished") {
+		t.Fatalf("exit review silent about unpublished keys:\n%s", v)
 	}
 }
 
-func TestExpiredPausedRoleIsReportedExpiredNotPaused(t *testing.T) {
+func TestExpiredUnpublishedRoleIsReportedExpired(t *testing.T) {
 	f := setupUI(t)
 	p, _ := f.m.profile()
-	expired := domain.ManagedRole{Alias: "easy-sso-managed-one", Profile: p, Paused: true, Status: "expired", Expiration: time.Now().Add(-time.Minute)}
+	expired := domain.ManagedRole{Alias: "easy-sso-managed-one", Profile: p, Unpublished: true, Status: "expired", Expiration: time.Now().Add(-time.Minute)}
 	f.creds.roles = []domain.ManagedRole{expired}
 	finish(f.m, f.m.load())
 	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
-	if status := f.m.identityCredentialStatus(p); strings.Contains(status, "paused") || !strings.Contains(strings.ToLower(status), "expired") {
-		t.Fatalf("identity header for an expired paused role: %q", status)
+	if status := f.m.identityCredentialStatus(p); strings.Contains(status, "unpublished") || !strings.Contains(strings.ToLower(status), "expired") {
+		t.Fatalf("identity header for an expired unpublished role: %q", status)
 	}
 	for _, c := range f.m.controls() {
-		if c.key == "p" {
-			t.Fatalf("pause control offered for an expired role: %+v", c)
+		if c.key == "u" {
+			t.Fatalf("unpublish control offered for an expired role: %+v", c)
 		}
 	}
 	if f.m.accountActionLabel() != "Log in" {
-		t.Fatalf("expired paused role should offer renewal, got %q", f.m.accountActionLabel())
+		t.Fatalf("expired unpublished role should offer renewal, got %q", f.m.accountActionLabel())
 	}
-	paused := expired
-	paused.Status, paused.Expiration = "paused", time.Now().Add(time.Hour)
-	f.creds.roles = []domain.ManagedRole{paused}
+	live := expired
+	live.Status, live.Expiration = "unpublished", time.Now().Add(time.Hour)
+	f.creds.roles = []domain.ManagedRole{live}
 	finish(f.m, f.m.load())
 	labels := map[string]string{}
 	for _, c := range f.m.controls() {
 		labels[c.key] = c.label
 	}
-	if labels["p"] != "Resume" {
-		t.Fatalf("live paused role controls: %v", labels)
+	if labels["u"] != "Republish" {
+		t.Fatalf("live unpublished role controls: %v", labels)
 	}
 }

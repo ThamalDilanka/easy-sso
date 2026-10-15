@@ -929,7 +929,7 @@ func TestReopenRefusedWhenRoleCredentialsUnusable(t *testing.T) {
 	c, role, snapshot, cli := ec2Fixture(t)
 	term := &ownedHelperTerminal{helperTerminal: helperTerminal{cli: cli}}
 	defer term.close()
-	gate := errors.New("credentials are paused; resume them in Credentials before connecting")
+	gate := errors.New("credentials are unpublished; republish them in Credentials before connecting")
 	asked := ""
 	m := manager(t, cli, &bookmarks{}, Options{Terminal: term, Attempts: 1000, Interval: 5 * time.Millisecond, RecoveryCredentials: func(alias string) (domain.ManagedRole, domain.Snapshot, error) {
 		asked = alias
@@ -945,7 +945,7 @@ func TestReopenRefusedWhenRoleCredentialsUnusable(t *testing.T) {
 	_ = child.Stop()
 	term.wg.Wait()
 	term.exited = true
-	if _, err := m.Reopen(context.Background(), run.ID); err == nil || !strings.Contains(err.Error(), "paused") {
+	if _, err := m.Reopen(context.Background(), run.ID); err == nil || !strings.Contains(err.Error(), "unpublished") {
 		t.Fatalf("reopen with unusable credentials: %v", err)
 	}
 	if asked != role.Alias {

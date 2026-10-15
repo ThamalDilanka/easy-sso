@@ -44,8 +44,8 @@ func managedStatus(r domain.ManagedRole) string {
 	if strings.EqualFold(r.Status, "unknown") || r.Status == "" {
 		return "unknown"
 	}
-	if strings.EqualFold(r.Status, "paused") {
-		return "paused"
+	if strings.EqualFold(r.Status, "unpublished") {
+		return "unpublished"
 	}
 	if !r.Expiration.After(time.Now()) || strings.EqualFold(r.Status, "expired") {
 		return "expired"
@@ -79,8 +79,8 @@ func (m *Model) loginBadge(p domain.Profile) string {
 		return "Logged out"
 	case status == "conflict":
 		return "Conflict"
-	case status == "paused":
-		return "Paused"
+	case status == "unpublished":
+		return "Unpublished"
 	default:
 		return "Unknown"
 	}
@@ -96,8 +96,8 @@ func (m *Model) loginStatus(p domain.Profile) string {
 	if status == "missing" {
 		return "Logged out (no active keys)"
 	}
-	if status == "paused" {
-		return "Paused (keys parked in easy-sso; resume in Credentials)"
+	if status == "unpublished" {
+		return "Unpublished (keys held in easy-sso; republish in Credentials)"
 	}
 	return m.loginBadge(p)
 }
@@ -232,7 +232,7 @@ func (m *Model) footer() string {
 			}
 			return keys
 		case "role":
-			return "r: renew | d: remove | p: pause/resume | c: copy profile | PgUp/PgDn: scroll | Esc: back"
+			return "r: renew | d: remove | u: unpublish/republish | c: copy profile | PgUp/PgDn: scroll | Esc: back"
 		case "connection":
 			return "Enter: connect | e: edit | PgUp/PgDn: scroll | Esc: back"
 		}
