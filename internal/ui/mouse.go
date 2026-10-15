@@ -163,11 +163,16 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 
 type control struct{ label, key string }
 
-func pauseControl(r domain.ManagedRole) control {
+// pauseControl offers Pause for an active role and Resume for a paused one;
+// expired, missing or unknown roles get neither, since only Renew helps.
+func pauseControl(r domain.ManagedRole) (control, bool) {
 	if rolePaused(r) {
-		return control{"Resume", "p"}
+		return control{"Resume", "p"}, true
 	}
-	return control{"Pause", "p"}
+	if roleActive(r) {
+		return control{"Pause", "p"}, true
+	}
+	return control{}, false
 }
 
 func (m *Model) controls() []control {
@@ -218,7 +223,11 @@ func (m *Model) controls() []control {
 			}
 			return append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"}, control{"Back", "esc"})
 		case "role":
-			return []control{{"Renew", "r"}, {"Remove", "d"}, pauseControl(m.review.role), {"Copy profile", "y"}, {"Back", "esc"}}
+			c := []control{{"Renew", "r"}, {"Remove", "d"}}
+			if pause, ok := pauseControl(m.review.role); ok {
+				c = append(c, pause)
+			}
+			return append(c, control{"Copy profile", "y"}, control{"Back", "esc"})
 		default:
 			return []control{{"Confirm", "enter"}, {"Cancel", "esc"}}
 		}
@@ -260,7 +269,10 @@ func (m *Model) controls() []control {
 		if len(m.roles) > 0 {
 			c = append(c, control{"Renew", "r"}, control{"Remove", "d"}, control{"Details", "v"})
 			if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
-				c = append(c, pauseControl(m.roles[m.selectedRow]), control{"Copy profile", "y"})
+				if pause, ok := pauseControl(m.roles[m.selectedRow]); ok {
+					c = append(c, pause)
+				}
+				c = append(c, control{"Copy profile", "y"})
 			}
 		}
 		return append(c, control{"Retry cleanup", "c"})

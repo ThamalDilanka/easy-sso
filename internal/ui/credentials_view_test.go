@@ -191,3 +191,34 @@ func TestPauseAndResumeFromCredentialsView(t *testing.T) {
 		t.Fatalf("exit review silent about paused keys:\n%s", v)
 	}
 }
+
+func TestExpiredPausedRoleIsReportedExpiredNotPaused(t *testing.T) {
+	f := setupUI(t)
+	p, _ := f.m.profile()
+	expired := domain.ManagedRole{Alias: "easy-sso-managed-one", Profile: p, Paused: true, Status: "expired", Expiration: time.Now().Add(-time.Minute)}
+	f.creds.roles = []domain.ManagedRole{expired}
+	finish(f.m, f.m.load())
+	f.m.screen, f.m.focus, f.m.selectedRow = credentials, 1, 0
+	if status := f.m.identityCredentialStatus(p); strings.Contains(status, "paused") || !strings.Contains(strings.ToLower(status), "expired") {
+		t.Fatalf("identity header for an expired paused role: %q", status)
+	}
+	for _, c := range f.m.controls() {
+		if c.key == "p" {
+			t.Fatalf("pause control offered for an expired role: %+v", c)
+		}
+	}
+	if f.m.accountActionLabel() != "Log in" {
+		t.Fatalf("expired paused role should offer renewal, got %q", f.m.accountActionLabel())
+	}
+	paused := expired
+	paused.Status, paused.Expiration = "paused", time.Now().Add(time.Hour)
+	f.creds.roles = []domain.ManagedRole{paused}
+	finish(f.m, f.m.load())
+	labels := map[string]string{}
+	for _, c := range f.m.controls() {
+		labels[c.key] = c.label
+	}
+	if labels["p"] != "Resume" {
+		t.Fatalf("live paused role controls: %v", labels)
+	}
+}

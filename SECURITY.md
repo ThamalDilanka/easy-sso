@@ -2,7 +2,7 @@
 
 ## What easy-sso stores
 
-Temporary role credentials are published to explicitly managed aliases in the configured AWS shared credentials file. App state contains ownership fingerprints, account/profile definitions, connection bookmarks, settings, and session metadata. It does not store SSO tokens, database IAM tokens, or terminal transcripts.
+Temporary role credentials are published to explicitly managed aliases in the configured AWS shared credentials file. App state contains ownership fingerprints, account/profile definitions, connection bookmarks, settings, and session metadata. It does not store SSO tokens, database IAM tokens, or terminal transcripts. A paused role's credentials section is held only in the running process's memory and is dropped on exit; it is never written to app state or logs.
 
 Unix state directories require current-user ownership and private permissions; credentials require private files. Windows storage uses a protected current-user DACL. Symlink paths are rejected. These controls do not isolate the application from other processes running as the same user.
 

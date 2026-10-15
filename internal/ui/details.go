@@ -17,9 +17,10 @@ func roleActive(r domain.ManagedRole) bool {
 }
 
 // rolePaused reports a role whose entry is out of the credentials file while
-// its keys are parked in this process.
+// its keys are parked and still valid; an expired or edited paused role is
+// reported by its real status so the user is sent to Renew, not Resume.
 func rolePaused(r domain.ManagedRole) bool {
-	return r.Paused || strings.EqualFold(r.Status, "paused")
+	return managedStatus(r) == "paused"
 }
 
 // selectedProfileActive also counts paused roles, so Log out stays available.

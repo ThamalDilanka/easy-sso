@@ -29,7 +29,7 @@ func shortcutGroups() []shortcutGroup {
 		{"ACCOUNTS & LOGIN", []shortcut{
 			{"Ctrl+A", "Log in to the selected profile, or review logout if active."},
 			{"A", "Open advanced multi-profile activation (uppercase A)."},
-			{"y", "Edit the selected account's display label."},
+			{"y", "Edit the selected account's display label (outside the Credentials table, where y copies the profile name)."},
 			{"Space", "In the advanced profile picker: select / deselect a role."},
 			{"Enter / Esc", "In the picker: review selected roles / cancel."},
 		}},

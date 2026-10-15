@@ -635,6 +635,8 @@ func (m *Manager) Resume(alias string) error {
 			if e != nil || f != r.Fingerprint {
 				return errors.New("managed profile was externally edited; resume blocked")
 			}
+			// The exact text returns, appended at the end of the file; its
+			// position is not restored and the fingerprint does not depend on it.
 			next := replace(creds, alias, text)
 			if e = store.AtomicWrite(m.credentials, next); e != nil {
 				return e
