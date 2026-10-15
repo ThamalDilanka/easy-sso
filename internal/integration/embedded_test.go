@@ -7,6 +7,8 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/sessions"
 	"github.com/ThamalDilanka/easy-sso/internal/terminal"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +97,7 @@ func TestEmbeddedShellBrokenPipeThenReconnect(t *testing.T) {
 	executable := buildExecutable(t)
 	h := setup(t)
 	h.activate(t)
-	h.mode(t, map[string]any{"brokenPipe": 0.5})
+	h.mode(t, map[string]any{"brokenPipe": true})
 	role, snapshot, err := h.roles.Snapshot("tui-one")
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +118,10 @@ func TestEmbeddedShellBrokenPipeThenReconnect(t *testing.T) {
 	run, err := manager.Open(ctx, c, role, snapshot)
 	if err != nil || run.State != "Connected" {
 		t.Fatalf("open: %v %+v", err, run)
+	}
+	// Only a confirmed session loses its transport; the fake waits for this marker.
+	if err := os.WriteFile(filepath.Join(h.dir, "broken-pipe"), nil, 0600); err != nil {
+		t.Fatal(err)
 	}
 	find := func() domain.Run {
 		for _, r := range manager.List() {
