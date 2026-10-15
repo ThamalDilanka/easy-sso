@@ -924,3 +924,37 @@ func TestRecheckOnEndedShellKeepsEndedState(t *testing.T) {
 		t.Fatalf("recheck rewrote the ended record: %s %q", r.State, r.Error)
 	}
 }
+
+func TestReopenRefusedWhenRoleCredentialsUnusable(t *testing.T) {
+	c, role, snapshot, cli := ec2Fixture(t)
+	term := &ownedHelperTerminal{helperTerminal: helperTerminal{cli: cli}}
+	defer term.close()
+	gate := errors.New("credentials are paused; resume them in Credentials before connecting")
+	asked := ""
+	m := manager(t, cli, &bookmarks{}, Options{Terminal: term, Attempts: 1000, Interval: 5 * time.Millisecond, RecoveryCredentials: func(alias string) (domain.ManagedRole, domain.Snapshot, error) {
+		asked = alias
+		return domain.ManagedRole{}, domain.Snapshot{}, gate
+	}})
+	run, err := m.Open(context.Background(), c, role, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli.mu.Lock()
+	child := cli.children[run.SessionID]
+	cli.mu.Unlock()
+	_ = child.Stop()
+	term.wg.Wait()
+	term.exited = true
+	if _, err := m.Reopen(context.Background(), run.ID); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("reopen with unusable credentials: %v", err)
+	}
+	if asked != role.Alias {
+		t.Fatalf("gate consulted for %q, want %q", asked, role.Alias)
+	}
+	term.mu.Lock()
+	launched := term.launched
+	term.mu.Unlock()
+	if launched != 1 || !term.Has(run.ID) {
+		t.Fatal("refused reopen launched a shell or dropped the ended screen")
+	}
+}
