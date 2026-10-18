@@ -73,6 +73,16 @@ func paths(o options) (domain.Prerequisites, error) {
 	if err != nil {
 		return p, err
 	}
+	// Activation refuses to publish into a shared AWS directory; report it here too.
+	dirs := []string{filepath.Dir(p.CredentialsPath)}
+	if dir := filepath.Dir(p.ConfigPath); dir != dirs[0] {
+		dirs = append(dirs, dir)
+	}
+	for _, dir := range dirs {
+		if e := store.CheckEnsureDir(dir); e != nil {
+			p.Problems = append(p.Problems, "AWS files directory: "+e.Error())
+		}
+	}
 	cli := o.CLI
 	if cli == "" {
 		cli = "aws"

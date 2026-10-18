@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,29 @@ func TestEffectivePathsAndMissingPrerequisiteBrowsing(t *testing.T) {
 	}
 	if _, e = os.Stat(p.StateDir); !os.IsNotExist(e) {
 		t.Fatal("read-only diagnostics created application state")
+	}
+}
+func TestDiagnosticsReportSharedAWSDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission semantics")
+	}
+	d := t.TempDir()
+	aws := filepath.Join(d, ".aws")
+	os.Mkdir(aws, 0755)
+	t.Setenv("HOME", d)
+	t.Setenv("AWS_CONFIG_FILE", "")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "")
+	t.Setenv("PATH", d)
+	p, e := paths(options{State: filepath.Join(d, "state"), CLI: filepath.Join(d, "missing-cli")})
+	if e != nil {
+		t.Fatal(e)
+	}
+	found := false
+	for _, problem := range p.Problems {
+		found = found || (strings.Contains(problem, aws) && strings.Contains(problem, "chmod 700"))
+	}
+	if !found {
+		t.Fatal("shared AWS directory not reported:", p.Problems)
 	}
 }
 func TestVersionAndArgumentValidation(t *testing.T) {

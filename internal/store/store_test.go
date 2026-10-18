@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -57,7 +58,16 @@ func TestSymlinkAndUnsafePermissions(t *testing.T) {
 	}
 	unsafe := filepath.Join(d, "unsafe")
 	os.Mkdir(unsafe, 0755)
-	if e := EnsureDir(unsafe); e == nil {
+	e := EnsureDir(unsafe)
+	if e == nil {
 		t.Fatal("unsafe directory accepted")
+	}
+	if !strings.Contains(e.Error(), unsafe) || !strings.Contains(e.Error(), "chmod 700") {
+		t.Fatal("directory error does not name the path and its fix:", e)
+	}
+	shared := filepath.Join(d, "shared")
+	os.WriteFile(shared, []byte("x"), 0644)
+	if e = ValidatePrivate(shared); e == nil || !strings.Contains(e.Error(), shared) || !strings.Contains(e.Error(), "chmod 600") {
+		t.Fatal("file error does not name the path and its fix:", e)
 	}
 }

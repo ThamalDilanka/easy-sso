@@ -36,6 +36,10 @@ func Protect(path string, dir bool) error {
 	}
 	return ValidatePrivate(path)
 }
+
+// CheckEnsureDir reports, without changing anything, whether EnsureDir would
+// accept path. Windows EnsureDir establishes the protected ACL itself.
+func CheckEnsureDir(path string) error { return CheckPath(path) }
 func ValidatePrivate(path string) error {
 	if err := CheckPath(path); err != nil {
 		return err

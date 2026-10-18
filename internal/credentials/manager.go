@@ -95,7 +95,7 @@ func readFile(path string, secret bool) ([]byte, error) {
 	}
 	if secret {
 		if err := store.ValidatePrivate(path); err != nil {
-			return nil, errors.New("unsafe credentials permissions; require current-user-only file")
+			return nil, fmt.Errorf("unsafe credentials file: %w", err)
 		}
 	}
 	if info.Size() > 8*1024*1024 {
@@ -296,6 +296,13 @@ func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, a
 	defer unlock()
 	if _, err = os.Stat(m.path("cleanup-pending.json")); err == nil {
 		return nil, errors.New("SSO cleanup incomplete. Retry cleanup before activation")
+	}
+	// Publishing refuses shared AWS directories; check them before the browser
+	// sign-in rather than discarding a completed login afterwards.
+	for _, dir := range []string{filepath.Dir(m.credentials), filepath.Dir(m.config)} {
+		if err = store.CheckEnsureDir(dir); err != nil {
+			return nil, err
+		}
 	}
 	s, err := m.readState()
 	if err != nil {

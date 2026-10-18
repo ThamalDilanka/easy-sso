@@ -92,3 +92,25 @@ Repeated Connect focuses the existing authenticated client when route, database 
 Validation uses fake AWS calls and a real local `psql`/TLS protocol fixture. This does not establish live RDS IAM permissions or production login readiness.
 
 After a restart, Tunnels automatically checks older records using their original managed profile. Closed sessions become stopped history. **Remote active** means AWS verified the saved session; **Stop (d)** terminates that exact session. **Needs login** names the original profile to renew; **Check failed** explains an identity, permission or network problem; **Port in use** means local listener cleanup still needs checking. Use **Recheck (r)** to retry immediately. Recovery does not reconnect, restore terminal screens or kill processes by saved PID.
+
+## Troubleshooting
+
+### Unsafe permissions on `~/.aws`
+
+**Symptom:** login stops with `Error: unsafe permissions on "/home/<you>/.aws" (mode 755); fix with: chmod 700 "/home/<you>/.aws"`, or `easysso diagnostics` lists an `AWS files directory` problem. Releases before 1.1.1 showed `unsafe permissions on application storage; require current-user-only access` only after the browser sign-in had completed.
+
+**Cause:** easy-sso writes temporary role credentials only into a folder that no other local user can read. `aws configure sso` usually creates `~/.aws` with mode `755` (readable by everyone), and some WSL setups use a `000` umask that makes it `777`. easy-sso refuses rather than changing permissions on its own.
+
+**Fix:**
+
+```sh
+chmod 700 ~/.aws
+[ -f ~/.aws/credentials ] && chmod 600 ~/.aws/credentials
+easysso diagnostics   # the AWS files directory problem should be gone
+```
+
+Then log in again. A refused login publishes nothing and leaves no cleanup pending, so no other repair is needed. If `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` point elsewhere, apply the same `chmod` to the folders that contain those files.
+
+**WSL:** keep AWS files in the Linux home, not under `/mnt/c`. Windows drives usually ignore `chmod` and report every file as `777`, so the check cannot pass there. If `umask` prints `0000`, add `umask 022` to `~/.bashrc` or `~/.zshrc` so new folders are not created world-writable.
+
+The same rule applies to the application state folder (`~/.config/easy-sso` on Linux): `chmod 700` it if startup reports it as unsafe.

@@ -128,6 +128,12 @@ If you have not configured an AWS SSO profile yet, run the AWS CLI setup and ent
 aws configure sso
 ```
 
+easy-sso only writes credentials into a private AWS folder. Make sure `~/.aws` is readable by you alone (`aws configure sso` often creates it readable by everyone):
+
+```sh
+chmod 700 ~/.aws
+```
+
 Then check your local setup and start the app:
 
 ```sh
@@ -136,7 +142,7 @@ easysso diagnostics
 easysso
 ```
 
-Diagnostics checks prerequisites and profile definitions without signing in to AWS. Its output contains account IDs, roles, and local paths; redact it before sharing.
+Diagnostics checks prerequisites, profile definitions, and AWS folder permissions without signing in to AWS. See [troubleshooting](docs/USAGE.md#troubleshooting) if it reports a problem. Its output contains account IDs, roles, and local paths; redact it before sharing.
 
 1. Select your profile and press **Ctrl+A** to sign in. Open or copy the displayed browser link and complete the device-code flow.
 2. Choose **EC2** or **Databases**, then press **n** to enter a connection. Supply the instance ID or database endpoint and relay details from your team, review the destination, and connect. Successful connections become bookmarks.

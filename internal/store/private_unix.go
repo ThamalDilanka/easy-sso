@@ -3,12 +3,22 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
 )
 
 func private(path string, dir bool) error {
+	return ValidatePrivate(path)
+}
+
+// CheckEnsureDir reports, without changing anything, whether EnsureDir would
+// accept path. Unix never repairs a permissive existing directory.
+func CheckEnsureDir(path string) error {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return CheckPath(path)
+	}
 	return ValidatePrivate(path)
 }
 func ValidatePrivate(path string) error {
@@ -21,7 +31,11 @@ func ValidatePrivate(path string) error {
 	}
 	// Never silently repair permissive pre-existing paths.
 	if st.Mode().Perm()&0077 != 0 {
-		return fmt.Errorf("unsafe permissions on application storage; require current-user-only access")
+		fix := "chmod 600"
+		if st.IsDir() {
+			fix = "chmod 700"
+		}
+		return fmt.Errorf("unsafe permissions on %q (mode %03o); fix with: %s %q", path, st.Mode().Perm(), fix, path)
 	}
 	if info, ok := st.Sys().(*syscall.Stat_t); !ok || info.Uid != uint32(os.Getuid()) {
 		return fmt.Errorf("application storage must be owned by the current user")

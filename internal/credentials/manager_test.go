@@ -9,6 +9,7 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/store"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +313,29 @@ func TestPrivatePathsAndPermissions(t *testing.T) {
 	os.Symlink(m.config, m.credentials)
 	if _, err := m.List(); err == nil {
 		t.Fatal("symlink accepted")
+	}
+}
+func TestSharedAWSDirectoryRefusedBeforeSignIn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission semantics")
+	}
+	m, cli, selections := setup(t)
+	dir := filepath.Dir(m.credentials)
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Activate(context.Background(), selections, true)
+	if err == nil {
+		t.Fatal("shared AWS directory accepted")
+	}
+	if len(cli.calls) > 0 {
+		t.Fatal("sign-in started before the AWS directory was checked", cli.calls)
+	}
+	if !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "chmod 700") {
+		t.Fatal("error does not name the directory and its fix:", err)
+	}
+	if _, err = os.Stat(m.path("cleanup-pending.json")); !os.IsNotExist(err) {
+		t.Fatal("cleanup marker left by a refused activation")
 	}
 }
 func TestRecoveryPublicationAndPartialRemoval(t *testing.T) {
