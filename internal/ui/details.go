@@ -127,7 +127,7 @@ func (m *Model) databaseTunnelHint(c domain.Connection) string {
 	for i := len(m.runs) - 1; i >= 0; i-- {
 		r := m.runs[i]
 		if r.Connection.Kind == "db" && r.Connection.AccountID == c.AccountID && r.Connection.Partition == c.Partition && r.Connection.Endpoint == c.Endpoint && r.Connection.DBPort == c.DBPort && r.Connection.Region == c.Region && (r.State == "Listening" || r.State == "Connected") {
-			return fmt.Sprintf("profile [%s] · localhost:%d", r.Profile.Name, r.Connection.LocalPort)
+			return fmt.Sprintf("profile [%s] · %s", r.Profile.Name, localRoute(r.Connection))
 		}
 	}
 	return ""
@@ -154,7 +154,7 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 	if c.Kind == "ec2" {
 		fields = append(fields, [2]string{"Instance", c.InstanceID}, [2]string{"Region", c.Region}, [2]string{"Document", documentLabel(c)})
 	} else {
-		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", fmt.Sprintf("localhost:%d", c.LocalPort)})
+		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", localRoute(c)})
 		if c.IAMDatabase() {
 			fields = append(fields, [2]string{"Login", "PostgreSQL IAM"}, [2]string{"Database", c.Database}, [2]string{"DB user", c.DBUser})
 		} else if isDocumentDB(c) {
@@ -226,7 +226,7 @@ func (m *Model) runDetails(r domain.Run) []string {
 	}
 	lines := m.detailSection(title, [][2]string{{"Target", r.Connection.Name}, {"State", runState(r)}, {"Account", r.Profile.AccountID}, {"Profile", r.Profile.Name}, {"Role", r.Profile.Role}, {"Region", r.Connection.Region}, {"Started", humanTimestamp(r.StartedAt)}, {"SSM session", r.SessionID}})
 	if r.Connection.Kind == "db" {
-		lines = append(lines, m.detailSection("ROUTE", [][2]string{{"Local", fmt.Sprintf("localhost:%d", r.Connection.LocalPort)}, {"Remote", fmt.Sprintf("%s:%d", r.Connection.Endpoint, r.Connection.DBPort)}, {"Relay", r.Connection.RelayInstanceID}, {"SSM region", r.Connection.RelayRegion}})...)
+		lines = append(lines, m.detailSection("ROUTE", [][2]string{{"Local", localRoute(r.Connection)}, {"Remote", fmt.Sprintf("%s:%d", r.Connection.Endpoint, r.Connection.DBPort)}, {"Relay", r.Connection.RelayInstanceID}, {"SSM region", r.Connection.RelayRegion}})...)
 		if r.Connection.IAMDatabase() {
 			lines = append(lines, m.detailRow("Database", r.Connection.Database), m.detailRow("DB user", r.Connection.DBUser), m.detailRow("Local tab", m.runTerminal(r)))
 		}

@@ -1027,3 +1027,32 @@ func TestDocumentDBBookmarkReviewChecksCAOfOpenTunnel(t *testing.T) {
 		t.Fatalf("review of an open tunnel:\n%s", content)
 	}
 }
+
+func TestDocumentDBRoutesUse127001(t *testing.T) {
+	f := setupUI(t)
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	f.conns.items = f.m.connections
+	f.sessions.runs = []domain.Run{docdbRun(f, 37018)}
+	finish(f.m, f.m.load())
+	views := []string{f.m.View()}
+	f.m.connectionReview(docdbBookmark(f))
+	views = append(views, strings.Join(f.m.reviewContent(), "\n"))
+	f.m.review = &review{kind: "run", run: f.m.runs[0]}
+	views = append(views, strings.Join(f.m.reviewContent(), "\n"))
+	f.m.review = nil
+	f.m.screen = tunnels
+	views = append(views, f.m.View())
+	for i, v := range views {
+		if strings.Contains(strings.ReplaceAll(v, "wsl.localhost", ""), "localhost") {
+			t.Fatalf("view %d shows localhost:\n%s", i, v)
+		}
+	}
+	// RDS rows keep their wording.
+	rds := docdbBookmark(f)
+	rds.Endpoint, rds.DBPort, rds.LocalPort = "db.example.rds.amazonaws.com", 5432, 15432
+	f.m.connectionReview(rds)
+	if !strings.Contains(strings.Join(f.m.reviewContent(), "\n"), "localhost:15432") {
+		t.Fatal("RDS route changed")
+	}
+}

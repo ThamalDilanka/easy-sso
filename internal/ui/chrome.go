@@ -515,7 +515,7 @@ func (m *Model) workspaceView() string {
 				if c.IAMDatabase() {
 					login = c.DBUser + " @ " + c.Database + " · PostgreSQL IAM"
 				}
-				details = []string{"", "Selected connection", m.detailRow("Name", c.Name), m.detailRow("Endpoint", c.Endpoint), m.detailRow("Login", login), m.detailRow("Route", fmt.Sprintf("localhost:%d → DB:%d · %s", c.LocalPort, c.DBPort, c.Region))}
+				details = []string{"", "Selected connection", m.detailRow("Name", c.Name), m.detailRow("Endpoint", c.Endpoint), m.detailRow("Login", login), m.detailRow("Route", fmt.Sprintf("%s → DB:%d · %s", localRoute(c), c.DBPort, c.Region))}
 				if isDocumentDB(c) {
 					details = append(details, m.detailRow("Client", "DataGrip / any MongoDB client · c copies URL"))
 				}
@@ -571,7 +571,7 @@ func (m *Model) workspaceView() string {
 			summary := "Selected: " + r.Connection.Name + " · " + runState(r)
 			identity := "Run profile: " + r.Profile.Name + " · " + r.Profile.AccountID
 			if r.Connection.Kind == "db" {
-				identity += fmt.Sprintf(" · localhost:%d", r.Connection.LocalPort)
+				identity += " · " + localRoute(r.Connection)
 			}
 			for _, line := range []string{summary, identity} {
 				main = append(main, m.paint("  "+padLine(ansi.Truncate(safe(line), inner, "…"), inner)+"  ", p.text, p.background, false))

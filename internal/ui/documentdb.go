@@ -53,6 +53,15 @@ func isDocumentDB(c domain.Connection) bool {
 	return c.Kind == "db" && connections.DocumentDBEndpoint(c.Endpoint)
 }
 
+// localRoute names a tunnel's local end. DocumentDB clients must use
+// 127.0.0.1 (WSL mirrored mode does not forward ::1), so its rows say so.
+func localRoute(c domain.Connection) string {
+	if isDocumentDB(c) {
+		return fmt.Sprintf("127.0.0.1:%d", c.LocalPort)
+	}
+	return fmt.Sprintf("localhost:%d", c.LocalPort)
+}
+
 func engineLabel(c domain.Connection) string {
 	if isDocumentDB(c) {
 		return "DocumentDB"
