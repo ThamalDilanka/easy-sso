@@ -132,7 +132,7 @@ func TestRunEnterFocusesOwnedTerminalAndVOnlyInspects(t *testing.T) {
 func TestActionGroupsFitAndRemainClickable(t *testing.T) {
 	for _, width := range []int{80, 100, 120, 140, 180} {
 		for _, height := range []int{24, 30, 40} {
-			for _, kind := range []string{"ec2", "db", "iam"} {
+			for _, kind := range []string{"ec2", "db", "iam", "docdb"} {
 				t.Run(fmt.Sprintf("%s/%dx%d", kind, width, height), func(t *testing.T) {
 					f := setupUI(t)
 					m := f.m
@@ -143,6 +143,9 @@ func TestActionGroupsFitAndRemainClickable(t *testing.T) {
 					if kind != "ec2" {
 						m.screen = databases
 						c.Kind = "db"
+					}
+					if kind == "docdb" {
+						c.Endpoint, c.DBPort, c.LocalPort = "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com", 27017, 37017
 					}
 					if kind == "iam" {
 						c.AuthMode = "postgres-iam"
@@ -162,6 +165,14 @@ func TestActionGroupsFitAndRemainClickable(t *testing.T) {
 					connect := mouseHit(t, m, "key", "enter", 0)
 					edit := mouseHit(t, m, "key", "e", 0)
 					details := mouseHit(t, m, "key", "v", 0)
+					if kind == "docdb" {
+						mouseHit(t, m, "key", "c", 0)
+						for _, h := range m.hits {
+							if h.action.kind == "key" && h.action.key == "l" {
+								t.Fatal("DocumentDB offers IAM setup")
+							}
+						}
+					}
 					if connect.y > edit.y || edit.y > details.y || (edit.y == details.y && edit.x >= details.x) {
 						t.Fatal("inconsistent action order")
 					}

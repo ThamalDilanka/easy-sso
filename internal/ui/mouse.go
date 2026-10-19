@@ -212,6 +212,9 @@ func (m *Model) controls() []control {
 				c = append(c, control{"New window", "w"})
 			}
 			c = append(c, control{"Edit", "e"})
+			if isDocumentDB(m.review.connection) {
+				c = append(c, control{"Copy URL", "c"})
+			}
 			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() && !isDocumentDB(m.review.connection) {
 				c = append(c, control{"Set up IAM", "l"})
 			}
@@ -224,7 +227,11 @@ func (m *Model) controls() []control {
 			if m.canFocusRun(m.review.run) {
 				c = append(c, control{"Focus terminal", "enter"})
 			}
-			return append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"}, control{"Back", "esc"})
+			c = append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"})
+			if isDocumentDB(m.review.run.Connection) && activeTunnel(m.review.run) {
+				c = append(c, control{"Copy URL", "c"})
+			}
+			return append(c, control{"Back", "esc"})
 		case "role":
 			c := []control{{"Renew", "r"}, {"Remove", "d"}}
 			if publish, ok := publishControl(m.review.role); ok {
@@ -250,6 +257,8 @@ func (m *Model) controls() []control {
 				c = append(c, control{"Edit", "e"}, control{"Details", "v"})
 				if t := m.targets()[m.selectedRow]; !t.IAMDatabase() && !isDocumentDB(t) {
 					c = append(c, control{"Set up IAM", "l"})
+				} else if isDocumentDB(t) {
+					c = append(c, control{"Copy URL", "c"})
 				}
 			}
 		}
@@ -265,7 +274,11 @@ func (m *Model) controls() []control {
 				label = "Focus terminal"
 			}
 			c := []control{{label, "enter"}}
-			return append(c, control{"Disconnect / stop", "d"}, control{"Details", "v"}, control{"Recheck", "r"})
+			c = append(c, control{"Disconnect / stop", "d"}, control{"Details", "v"}, control{"Recheck", "r"})
+			if r := rs[m.selectedRow]; isDocumentDB(r.Connection) && activeTunnel(r) {
+				c = append(c, control{"Copy URL", "c"})
+			}
+			return c
 		}
 	case credentials:
 		var c []control
@@ -292,16 +305,16 @@ func (m *Model) controlGroups(compact bool) (primary, secondary []control) {
 		secondaryAction := false
 		if !m.busy && !m.help && m.form == nil && !m.picker {
 			if m.review != nil {
-				secondaryAction = c.key == "esc" || c.key == "e" || c.key == "l" || c.key == "N"
+				secondaryAction = c.key == "esc" || c.key == "e" || c.key == "l" || c.key == "N" || (c.key == "c" && (m.review.kind == "connection" || m.review.kind == "run"))
 				if m.review.kind == "run" {
 					secondaryAction = secondaryAction || c.key == "r"
 				}
 			} else {
 				switch m.screen {
 				case ec2, databases:
-					secondaryAction = c.key == "e" || c.key == "v" || c.key == "l"
+					secondaryAction = c.key == "e" || c.key == "v" || c.key == "l" || c.key == "c"
 				case sessions, tunnels:
-					secondaryAction = c.key == "v" || c.key == "r"
+					secondaryAction = c.key == "v" || c.key == "r" || c.key == "c"
 				case credentials:
 					secondaryAction = c.key == "R" || c.key == "v" || c.key == "c"
 				}

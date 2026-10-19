@@ -540,3 +540,219 @@ func TestDocumentDBDetailsFit(t *testing.T) {
 		}
 	}
 }
+
+func recordCopies(f fixture) *[]string {
+	copied := &[]string{}
+	f.m.services.CopyText = func(text string) error { *copied = append(*copied, text); return nil }
+	return copied
+}
+
+func noCredentials(t *testing.T, copied []string) {
+	t.Helper()
+	for _, s := range copied {
+		if strings.Contains(s, "@") || strings.Contains(s, "password") || strings.Contains(s, "reader") {
+			t.Fatalf("credential in copied text %q", s)
+		}
+	}
+}
+
+func TestDocumentDBCopyKeys(t *testing.T) {
+	f := setupUI(t)
+	copied := recordCopies(f)
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	f.conns.items = f.m.connections // survives the reload below
+	key(f.m, "c")
+	if len(*copied) != 1 || (*copied)[0] != dataGripURL(37017) {
+		t.Fatalf("c copied %q", *copied)
+	}
+	if want := "Copied DataGrip URL for 127.0.0.1:37017. In SSH/SSL set the CA file and Verify CA; enter your DocumentDB user in DataGrip."; f.m.status != want {
+		t.Fatalf("c status %q", f.m.status)
+	}
+	clickHit(f.m, mouseHit(t, f.m, "key", "c", 0))
+	if len(*copied) != 2 || (*copied)[1] != dataGripURL(37017) {
+		t.Fatalf("click copied %q", *copied)
+	}
+	key(f.m, "C")
+	if len(*copied) != 3 || (*copied)[2] != clientURI(37017, "/test-state/rds-ca-aws.pem", false) || !strings.Contains((*copied)[2], "tlsCAFile=%2Ftest-state%2Frds-ca-aws.pem") {
+		t.Fatalf("C copied %q", *copied)
+	}
+	if want := "Copied client URI with tlsCAFile /test-state/rds-ca-aws.pem. In a shell, wrap it in single quotes."; f.m.status != want || len(*f.ensured) != 1 {
+		t.Fatalf("C status %q, CA requests %d", f.m.status, len(*f.ensured))
+	}
+	if !f.m.ca["/test-state/rds-ca-aws.pem"].ready {
+		t.Fatal("C did not record the CA result")
+	}
+	key(f.m, "v")
+	key(f.m, "c")
+	if len(*copied) != 4 || (*copied)[3] != dataGripURL(37017) {
+		t.Fatalf("review c copied %q", *copied)
+	}
+
+	// The open run's port wins in the run review and the tunnels list.
+	key(f.m, "esc")
+	f.sessions.runs = []domain.Run{docdbRun(f, 37018)}
+	finish(f.m, f.m.load())
+	f.m.screen = tunnels
+	f.m.selectedRow = 0
+	key(f.m, "c")
+	key(f.m, "v")
+	key(f.m, "c")
+	if len(*copied) != 6 || (*copied)[4] != dataGripURL(37018) || (*copied)[5] != dataGripURL(37018) {
+		t.Fatalf("run copies %q", *copied)
+	}
+	key(f.m, "esc")
+	f.m.screen = databases
+	f.m.selectedRow = 0
+	key(f.m, "c")
+	if (*copied)[6] != dataGripURL(37018) {
+		t.Fatalf("bookmark with open tunnel copied %q", (*copied)[6])
+	}
+	noCredentials(t, *copied)
+}
+
+func TestDocumentDBCopyFailureNamesDetails(t *testing.T) {
+	f := setupUI(t)
+	f.m.services.CopyText = func(string) error { return errors.New("no clipboard") }
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	for _, k := range []string{"c", "C"} {
+		f.m.status = ""
+		key(f.m, k)
+		if !strings.Contains(f.m.status, "Could not copy") || !strings.Contains(f.m.status, "Details (v)") || strings.Contains(f.m.status, "Copied") {
+			t.Fatalf("%s failure status %q", k, f.m.status)
+		}
+	}
+}
+
+func TestDocumentDBCopyCAEdgeCases(t *testing.T) {
+	f := setupUI(t)
+	copied := recordCopies(f)
+	f.m.screen = databases
+	c := docdbBookmark(f)
+	f.m.connections = []domain.Connection{c}
+	f.m.services.EnsureCA = func(context.Context, domain.Connection) (string, error) {
+		return "", errors.New("AWS RDS CA bundle download was invalid")
+	}
+	key(f.m, "C")
+	if (*copied)[0] != clientURI(37017, "/test-state/rds-ca-aws.pem", false) || !strings.HasSuffix(f.m.status, " CA bundle unavailable: AWS RDS CA bundle download was invalid.") {
+		t.Fatalf("failed CA: copied %q status %q", *copied, f.m.status)
+	}
+	if f.m.ca["/test-state/rds-ca-aws.pem"].err == "" {
+		t.Fatal("failed CA not recorded")
+	}
+	cn := c
+	cn.Partition = "aws-cn"
+	f.m.connectionReview(cn) // the list shows only the profile's partition
+	key(f.m, "C")
+	if (*copied)[1] != clientURI(37017, "", false) || f.m.status != "Copied without tlsCAFile; set RDS CA file for aws-cn." {
+		t.Fatalf("aws-cn: copied %q status %q", (*copied)[1], f.m.status)
+	}
+	elastic := c
+	elastic.Endpoint = "example.us-east-1.docdb-elastic.amazonaws.com"
+	f.m.connectionReview(elastic)
+	key(f.m, "C")
+	if strings.Contains((*copied)[2], "tlsCAFile") || !strings.Contains(f.m.status, "Copied client URI") {
+		t.Fatalf("elastic: copied %q status %q", (*copied)[2], f.m.status)
+	}
+	// A6: an ended run copies nothing.
+	run := docdbRun(f, 37018)
+	run.State = "Ended"
+	f.sessions.runs = []domain.Run{run}
+	finish(f.m, f.m.load())
+	f.m.review = nil
+	f.m.screen = tunnels
+	f.m.selectedRow = 0
+	before := len(*copied)
+	key(f.m, "c")
+	if len(*copied) != before || f.m.status != "Tunnel not open; Enter on the bookmark reopens it." {
+		t.Fatalf("ended run: copied %d status %q", len(*copied)-before, f.m.status)
+	}
+	noCredentials(t, *copied)
+}
+
+func TestDocumentDBWSLClientURI(t *testing.T) {
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	copied := recordCopies(f)
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	key(f.m, "C")
+	if want := clientURI(37017, `\\wsl.localhost\Example\test-state\rds-ca-aws.pem`, false); len(*copied) != 1 || (*copied)[0] != want {
+		t.Fatalf("WSL C copied %q", *copied)
+	}
+	if !strings.Contains(f.m.status, `tlsCAFile \\wsl.localhost\Example\test-state\rds-ca-aws.pem`) {
+		t.Fatalf("WSL C status %q", f.m.status)
+	}
+	key(f.m, "c")
+	if !strings.HasSuffix(f.m.status, "CA file: use the CA file Windows row.") {
+		t.Fatalf("WSL c status %q", f.m.status)
+	}
+}
+
+func TestCopyKeyRegressions(t *testing.T) {
+	f := setupUI(t)
+	copied := recordCopies(f)
+	f.m.screen = databases
+	rds := docdbBookmark(f)
+	rds.Endpoint, rds.DBPort, rds.LocalPort = "db.example.rds.amazonaws.com", 5432, 15432
+	f.m.connections = []domain.Connection{rds}
+	f.m.status = "unchanged"
+	for _, k := range []string{"c", "C"} {
+		key(f.m, k)
+	}
+	key(f.m, "v")
+	for _, k := range []string{"c", "C"} {
+		key(f.m, k)
+	}
+	if len(*copied) != 0 || f.m.status != "unchanged" {
+		t.Fatalf("RDS copied %q status %q", *copied, f.m.status)
+	}
+	for _, c := range f.m.controls() {
+		if c.key == "c" {
+			t.Fatal("RDS review offers a copy control")
+		}
+	}
+	// The role review still copies the profile name.
+	f.m.review = &review{kind: "role", role: domain.ManagedRole{Alias: "example-profile"}}
+	key(f.m, "c")
+	if len(*copied) != 1 || (*copied)[0] != "example-profile" {
+		t.Fatalf("role review copied %q", *copied)
+	}
+}
+
+func TestDocumentDBTunnelFooterFits(t *testing.T) {
+	for _, width := range []int{80, 100, 140} {
+		f := setupUI(t)
+		f.sessions.runs = []domain.Run{docdbRun(f, 37018)}
+		finish(f.m, f.m.load())
+		f.m.screen = tunnels
+		f.m.selectedRow = 0
+		f.m.width, f.m.height = width, 24
+		lines := strings.Split(f.m.View(), "\n")
+		if len(lines) > 24 {
+			t.Fatalf("%d: %d lines", width, len(lines))
+		}
+		for _, line := range lines {
+			if w := ansi.StringWidth(line); w > width {
+				t.Fatalf("%d: line width %d %q", width, w, line)
+			}
+		}
+		copied := recordCopies(f)
+		clickHit(f.m, mouseHit(t, f.m, "key", "c", 0))
+		if len(*copied) != 1 || (*copied)[0] != dataGripURL(37018) {
+			t.Fatalf("%d: click copied %q", width, *copied)
+		}
+	}
+}
+
+func TestHelpListsDocumentDBCopy(t *testing.T) {
+	f := setupUI(t)
+	help := f.m.helpContent()
+	databasesAt, tunnelsAt := strings.Index(help, "DATABASES"), strings.Index(help, "SESSIONS & TUNNELS")
+	first := strings.Index(help, "c / C")
+	second := strings.LastIndex(help, "c / C")
+	if databasesAt < 0 || tunnelsAt < 0 || first < databasesAt || first > tunnelsAt || second < tunnelsAt {
+		t.Fatalf("help lacks c / C in both sections:\n%s", help)
+	}
+}

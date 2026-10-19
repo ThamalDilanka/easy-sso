@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/database"
@@ -191,4 +192,131 @@ func (m *Model) documentDBClient(c domain.Connection, port int) []string {
 		lines = append(lines, "Reader endpoint: read-only for every user; use the cluster endpoint to write.")
 	}
 	return lines
+}
+
+// caCopyMsg reports a C copy: its CA check result and the status to show.
+type caCopyMsg struct {
+	path     string
+	err      error
+	stale    bool
+	feedback string
+}
+
+// documentDBTarget resolves the DocumentDB bookmark or open run that c and C
+// act on: the review first, then the selected row.
+func (m *Model) documentDBTarget() (domain.Connection, int, bool) {
+	fromRun := func(r domain.Run) (domain.Connection, int, bool) {
+		if !isDocumentDB(r.Connection) {
+			return domain.Connection{}, 0, false
+		}
+		if !activeTunnel(r) {
+			m.status = "Tunnel not open; Enter on the bookmark reopens it."
+			return domain.Connection{}, 0, false
+		}
+		return r.Connection, r.Connection.LocalPort, true
+	}
+	if r := m.review; r != nil {
+		switch r.kind {
+		case "connection":
+			if isDocumentDB(r.connection) {
+				return r.connection, m.documentDBPort(r.connection), true
+			}
+		case "run":
+			return fromRun(r.run)
+		}
+		return domain.Connection{}, 0, false
+	}
+	switch m.screen {
+	case databases:
+		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) && isDocumentDB(ts[m.selectedRow]) {
+			return ts[m.selectedRow], m.documentDBPort(ts[m.selectedRow]), true
+		}
+	case sessions, tunnels:
+		if rs := m.visibleRuns(); m.selectedRow >= 0 && m.selectedRow < len(rs) {
+			return fromRun(rs[m.selectedRow])
+		}
+	}
+	return domain.Connection{}, 0, false
+}
+
+// copyDocumentDBKey handles c (DataGrip URL) and C (client URI); it reports
+// false when the target is not DocumentDB, so the key keeps its other uses.
+func (m *Model) copyDocumentDBKey(key string) (tea.Cmd, bool) {
+	if key != "c" && key != "C" {
+		return nil, false
+	}
+	c, port, ok := m.documentDBTarget()
+	if !ok {
+		return nil, false
+	}
+	return m.copyDocumentDB(c, port, key == "C"), true
+}
+
+func copyFailure() string {
+	if goos == "linux" && getenv("WSL_DISTRO_NAME") == "" {
+		return "Could not copy (install xclip or wl-clipboard on Linux). The URL is in Details (v)."
+	}
+	return "Could not copy. The URL is in Details (v)."
+}
+
+// copyDocumentDB copies connection strings only; never a user or password.
+func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.Cmd {
+	copy := m.copyText()
+	write := func(text string) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return copy(ctx, text) == nil
+	}
+	elastic := connections.DocumentDBElastic(c.Endpoint)
+	if !generic {
+		feedback := fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL set the CA file and Verify CA; enter your DocumentDB user in DataGrip.", port)
+		if elastic {
+			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL turn on Use SSL with no CA file; enter your DocumentDB user in DataGrip.", port)
+		} else if wslPath("/") != "" {
+			feedback += " CA file: use the CA file Windows row."
+		}
+		url := dataGripURL(port)
+		return func() tea.Msg {
+			if !write(url) {
+				return clipboardMsg{copyFailure()}
+			}
+			return clipboardMsg{feedback}
+		}
+	}
+	path, pathErr := m.caPath(c)
+	ensure := m.services.EnsureCA
+	if ensure == nil {
+		dir := m.services.Prerequisites.StateDir
+		ensure = func(ctx context.Context, c domain.Connection) (string, error) { return database.EnsureCA(ctx, c, dir) }
+	}
+	return func() tea.Msg {
+		if elastic {
+			if !write(clientURI(port, "", true)) {
+				return clipboardMsg{copyFailure()}
+			}
+			return clipboardMsg{"Copied client URI (elastic clusters need no tlsCAFile). In a shell, wrap it in single quotes."}
+		}
+		if pathErr != nil {
+			if !write(clientURI(port, "", false)) {
+				return clipboardMsg{copyFailure()}
+			}
+			return clipboardMsg{"Copied without tlsCAFile; set RDS CA file for aws-cn."}
+		}
+		_, err := ensure(context.Background(), c)
+		msg := caCopyMsg{path: path, err: err, stale: err != nil && database.CachedCA(path)}
+		// Under WSL the clients run on Windows, so they need the Windows path.
+		ca := path
+		if win := wslPath(path); win != "" {
+			ca = win
+		}
+		if !write(clientURI(port, ca, false)) {
+			msg.feedback = copyFailure()
+			return msg
+		}
+		msg.feedback = "Copied client URI with tlsCAFile " + ca + ". In a shell, wrap it in single quotes."
+		if err != nil {
+			msg.feedback += " CA bundle unavailable: " + err.Error() + "."
+		}
+		return msg
+	}
 }

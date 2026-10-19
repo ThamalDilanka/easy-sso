@@ -252,9 +252,12 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		} else if m.screen == sessions || m.screen == tunnels {
 			return m.recheckSelected()
 		}
-	case "c":
-		if m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
+	case "c", "C":
+		if key == "c" && m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
 			return m.copyProfileName(m.roles[m.selectedRow])
+		}
+		if cmd, ok := m.copyDocumentDBKey(key); ok {
+			return cmd
 		}
 	case "R":
 		if m.screen == credentials && m.services.Credentials != nil {

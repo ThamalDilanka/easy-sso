@@ -48,12 +48,14 @@ func shortcutGroups() []shortcutGroup {
 			{"n", "Add a database and relay bookmark."},
 			{"e", "Edit all saved database and relay fields; also available in review."},
 			{"p", "In connection review: temporarily override the local port."},
+			{"c / C", "DocumentDB: copy the DataGrip URL / the URI with tlsCAFile for mongosh, Compass and drivers. No user or password is copied."},
 		}},
 		{"SESSIONS & TUNNELS", []shortcut{
 			{"Enter / f", "Focus an existing terminal. Enter shows details when no terminal can be focused."},
 			{"v", "Open selected run details at the top; Esc returns to the list position."},
 			{"d", "Review disconnect / stop for the selected run."},
 			{"r", "Recheck status; recovered tunnels use their original profile to verify AWS and local port state."},
+			{"c / C", "Copy the open DocumentDB tunnel's DataGrip URL / client URI."},
 		}},
 		{"CREDENTIALS", []shortcut{
 			{"Enter / v", "Show the selected managed credential's details."},

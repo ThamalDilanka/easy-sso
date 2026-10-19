@@ -93,6 +93,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 	}
 	switch r.kind {
 	case "connection":
+		if cmd, ok := m.copyDocumentDBKey(key); ok {
+			return cmd
+		}
 		if key == "w" && r.connection.Kind == "ec2" {
 			return m.openMode(r.connection, true)
 		}
@@ -127,6 +130,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 			return m.open(r.connection)
 		}
 	case "run":
+		if cmd, ok := m.copyDocumentDBKey(key); ok {
+			return cmd
+		}
 		if key == "f" || key == "enter" {
 			return m.focusRun(r.run)
 		}

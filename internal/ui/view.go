@@ -264,7 +264,7 @@ func (m *Model) footer() string {
 			return "↑/↓: select | Enter: connect | v: details | n: new | e: edit" + common
 		}
 		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) && isDocumentDB(ts[m.selectedRow]) {
-			return "↑/↓: select | Enter: open tunnel | v: details | n: new | e: edit" + common
+			return "↑/↓: select | Enter: open tunnel | v: details | c: copy URL | n: new | e: edit" + common
 		}
 		return "↑/↓: select | Enter: connect | v: details | l: IAM setup | n: new | e: edit" + common
 	case sessions, tunnels:
@@ -273,7 +273,11 @@ func (m *Model) footer() string {
 		if m.selectedRow >= 0 && m.selectedRow < len(rs) && m.canFocusRun(rs[m.selectedRow]) {
 			action = "Enter/f: focus terminal"
 		}
-		return action + " | v: details | d: disconnect/stop | r: recheck" + common
+		copyURL := ""
+		if m.selectedRow >= 0 && m.selectedRow < len(rs) && isDocumentDB(rs[m.selectedRow].Connection) && activeTunnel(rs[m.selectedRow]) {
+			copyURL = " | c: copy URL"
+		}
+		return action + " | v: details | d: disconnect/stop | r: recheck" + copyURL + common
 	case credentials:
 		return "Ctrl+A: " + m.accountActionLabel() + " | v: details | r: renew | d: remove | c: cleanup" + common
 	case backup:
