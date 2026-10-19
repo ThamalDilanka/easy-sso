@@ -272,7 +272,7 @@ func runHelperWithCLI(ctx context.Context, stateDir string, data startup, cli do
 	}
 	life, cancel := context.WithCancel(ctx)
 	defer cancel()
-	diagnostic := &startupDiagnostic{}
+	diagnostic := &startupDiagnostic{document: data.Run.Connection.DocumentName}
 	child, e := cli.Start(life, data.Snapshot, arguments(data.Run), os.Stdin, os.Stdout, io.MultiWriter(os.Stderr, diagnostic))
 	if e != nil {
 		m.set(en, "Failed", e.Error())
@@ -336,7 +336,7 @@ func (m *Manager) persistTunnel(en *entry) {
 }
 
 func sameBinding(a, b domain.Run) bool {
-	return a.ID == b.ID && a.Connection.Kind == b.Connection.Kind && a.Connection.AccountID == b.Connection.AccountID && a.Connection.Partition == b.Connection.Partition && a.Connection.Region == b.Connection.Region && a.Connection.RelayRegion == b.Connection.RelayRegion && a.Connection.InstanceID == b.Connection.InstanceID && a.Connection.RelayInstanceID == b.Connection.RelayInstanceID && a.Connection.Endpoint == b.Connection.Endpoint && a.Connection.DBPort == b.Connection.DBPort && a.Connection.LocalPort == b.Connection.LocalPort && a.Connection.AuthMode == b.Connection.AuthMode && a.Connection.Database == b.Connection.Database && a.Connection.DBUser == b.Connection.DBUser && a.Connection.CAFile == b.Connection.CAFile && reflect.DeepEqual(a.Profile, b.Profile) && a.Alias == b.Alias && a.Identity == b.Identity && a.Expiration.Equal(b.Expiration) && a.StartedAt.Equal(b.StartedAt) && a.Title == b.Title && (a.SessionID == "" || a.SessionID == b.SessionID)
+	return a.ID == b.ID && a.Connection.Kind == b.Connection.Kind && a.Connection.AccountID == b.Connection.AccountID && a.Connection.Partition == b.Connection.Partition && a.Connection.Region == b.Connection.Region && a.Connection.RelayRegion == b.Connection.RelayRegion && a.Connection.InstanceID == b.Connection.InstanceID && a.Connection.DocumentName == b.Connection.DocumentName && a.Connection.RelayInstanceID == b.Connection.RelayInstanceID && a.Connection.Endpoint == b.Connection.Endpoint && a.Connection.DBPort == b.Connection.DBPort && a.Connection.LocalPort == b.Connection.LocalPort && a.Connection.AuthMode == b.Connection.AuthMode && a.Connection.Database == b.Connection.Database && a.Connection.DBUser == b.Connection.DBUser && a.Connection.CAFile == b.Connection.CAFile && reflect.DeepEqual(a.Profile, b.Profile) && a.Alias == b.Alias && a.Identity == b.Identity && a.Expiration.Equal(b.Expiration) && a.StartedAt.Equal(b.StartedAt) && a.Title == b.Title && (a.SessionID == "" || a.SessionID == b.SessionID)
 }
 func validateBinding(r domain.Run) error {
 	if !uuidPattern.MatchString(r.ID) || r.Connection.AccountID != r.Identity.Account || r.Connection.Partition != r.Profile.Partition || !connections.CompatibleRegion(r.Connection.Partition, r.Connection.Region) || (r.Connection.Kind == "db" && !connections.CompatibleRegion(r.Connection.Partition, r.Connection.RelayRegion)) {
@@ -351,9 +351,10 @@ func validateBinding(r domain.Run) error {
 // Inspect only bounded stderr fragments for known startup error codes. Persist
 // a fixed explanation, never raw AWS output, identities, or terminal contents.
 type startupDiagnostic struct {
-	mu     sync.Mutex
-	tail   string
-	denied bool
+	mu       sync.Mutex
+	tail     string
+	denied   bool
+	document string
 }
 
 func (d *startupDiagnostic) Write(p []byte) (int, error) {
@@ -374,7 +375,11 @@ func (d *startupDiagnostic) failure() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.denied {
-		return "Access denied: this role cannot start the SSM shell. Ask your AWS administrator to check ssm:StartSession access for the instance and session document (SSM-SessionManagerRunShell)."
+		document := d.document
+		if document == "" {
+			document = "SSM-SessionManagerRunShell"
+		}
+		return "Access denied: this role cannot start the SSM shell. Ask your AWS administrator to check ssm:StartSession access for the instance and session document (" + document + ")."
 	}
 	return "SSM client failed before connecting; see the terminal output for the AWS error."
 }

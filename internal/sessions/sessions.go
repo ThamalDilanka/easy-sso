@@ -303,6 +303,8 @@ func arguments(r domain.Run) []string {
 	if r.Connection.Kind == "db" {
 		b, _ := json.Marshal(map[string][]string{"host": {r.Connection.Endpoint}, "portNumber": {strconv.Itoa(r.Connection.DBPort)}, "localPortNumber": {strconv.Itoa(r.Connection.LocalPort)}})
 		a = append(a, "--document-name", "AWS-StartPortForwardingSessionToRemoteHost", "--parameters", string(b))
+	} else if r.Connection.DocumentName != "" {
+		a = append(a, "--document-name", r.Connection.DocumentName)
 	}
 	return a
 }
