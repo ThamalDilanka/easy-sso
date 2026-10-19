@@ -67,6 +67,11 @@
           "type": "string",
           "pattern": "^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$"
         },
+        "documentName": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^(?:[A-Za-z0-9_.-]{3,128}|arn:aws(?:-cn|-us-gov)?:ssm:[a-z]{2}(?:-[a-z]+)+-[0-9]+:[0-9]{12}:document/[A-Za-z0-9_.-]{3,128})$"
+        },
         "endpoint": {
           "type": "string",
           "minLength": 1,
@@ -215,8 +220,17 @@
               "relayRegion"
             ],
             "not": {
-              "required": [
-                "instanceId"
+              "anyOf": [
+                {
+                  "required": [
+                    "instanceId"
+                  ]
+                },
+                {
+                  "required": [
+                    "documentName"
+                  ]
+                }
               ]
             }
           }

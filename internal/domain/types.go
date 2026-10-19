@@ -53,6 +53,7 @@ type Connection struct {
 	AccountID       string     `json:"accountId"`
 	Region          string     `json:"region"`
 	InstanceID      string     `json:"instanceId,omitempty"`
+	DocumentName    string     `json:"documentName,omitempty"`
 	Endpoint        string     `json:"endpoint,omitempty"`
 	AuthMode        string     `json:"authMode,omitempty"`
 	Database        string     `json:"database,omitempty"`

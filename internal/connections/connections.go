@@ -128,7 +128,7 @@ func decode(b []byte) (document, error) {
 	return d, nil
 }
 func Validate(c domain.Connection) error {
-	for _, s := range []string{c.ID, c.Name, c.LastUsedProfile, c.LastUsedRole, c.Endpoint, c.Region, c.RelayRegion, c.Database, c.DBUser, c.CAFile} {
+	for _, s := range []string{c.ID, c.Name, c.LastUsedProfile, c.LastUsedRole, c.Endpoint, c.Region, c.RelayRegion, c.Database, c.DBUser, c.CAFile, c.DocumentName} {
 		if strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) }) >= 0 {
 			return errors.New("control characters are not allowed")
 		}
@@ -149,6 +149,19 @@ func Validate(c domain.Connection) error {
 	}
 	if c.IAMDatabase() && (strings.TrimSpace(c.Database) == "" || strings.TrimSpace(c.DBUser) == "") {
 		return errors.New("PostgreSQL IAM login requires a database name and database username")
+	}
+	if c.DocumentName != "" {
+		if c.Kind != "ec2" {
+			return errors.New("session documents apply only to EC2 bookmarks")
+		}
+		d, err := ParseSessionDocument(c.DocumentName)
+		if err != nil {
+			return err
+		}
+		// SSM documents are regional; a shared ARN must sit beside the instance.
+		if d.ARN && (d.Partition != c.Partition || d.Region != c.Region) {
+			return errors.New("session document ARN must be in the bookmark's partition and region")
+		}
 	}
 	// Validate an individual record against the same strict schema, with a
 	// placeholder only for the ID that is assigned on successful first save.
@@ -181,7 +194,12 @@ func CompatibleRegion(partition, region string) bool {
 }
 func ResourceKey(c domain.Connection) string {
 	if c.Kind == "ec2" {
-		return strings.Join([]string{c.Kind, c.Partition, c.AccountID, c.Region, c.InstanceID}, "|")
+		parts := []string{c.Kind, c.Partition, c.AccountID, c.Region, c.InstanceID}
+		// Only a custom document extends the key, so existing keys stay stable.
+		if c.DocumentName != "" {
+			parts = append(parts, c.DocumentName)
+		}
+		return strings.Join(parts, "|")
 	}
 	parts := []string{c.Kind, c.Partition, c.AccountID, strings.ToLower(c.Endpoint), fmt.Sprint(c.DBPort), c.Region, c.RelayInstanceID, c.RelayRegion}
 	if c.IAMDatabase() {
