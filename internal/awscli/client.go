@@ -270,7 +270,7 @@ func (c *Client) Start(ctx context.Context, s domain.Snapshot, args []string, in
 	region := ""
 	allowed := map[string]bool{"--region": true, "--target": true, "--reason": true, "--document-name": true, "--parameters": true}
 	seen := map[string]bool{}
-	target := ""
+	target, document := "", ""
 	for i := 2; i < len(args); i += 2 {
 		option := args[i]
 		if !allowed[option] || seen[option] || i+1 >= len(args) {
@@ -287,9 +287,12 @@ func (c *Client) Start(ctx context.Context, s domain.Snapshot, args []string, in
 		if option == "--target" {
 			target = value
 		}
-		if option == "--document-name" && value != "AWS-StartPortForwardingSessionToRemoteHost" {
-			return nil, errors.New("unsupported SSM document")
+		if option == "--document-name" {
+			document = value
 		}
+	}
+	if err := allowedDocument(document, region, seen["--parameters"]); err != nil {
+		return nil, err
 	}
 	if !regexp.MustCompile(`^i-([0-9a-f]{8}|[0-9a-f]{17})$`).MatchString(target) {
 		return nil, errors.New("invalid EC2 SSM target")
@@ -304,6 +307,25 @@ func (c *Client) Start(ctx context.Context, s domain.Snapshot, args []string, in
 	cmd.Stdout = out
 	cmd.Stderr = stderr
 	return process.Start(cmd)
+}
+
+// Parameters belong only to the fixed database tunnel document. Without them a
+// document must be an EC2 shell document that the bookmark rules accept.
+func allowedDocument(document, region string, parameters bool) error {
+	if parameters {
+		if document != "AWS-StartPortForwardingSessionToRemoteHost" {
+			return errors.New("unsupported SSM document")
+		}
+		return nil
+	}
+	if document == "" {
+		return nil
+	}
+	d, err := connections.ParseSessionDocument(document)
+	if err != nil || (d.ARN && d.Region != region) {
+		return errors.New("unsupported SSM document")
+	}
+	return nil
 }
 func (c *Client) Describe(ctx context.Context, s domain.Snapshot, region string, filters []string) ([]domain.SessionMetadata, error) {
 	return c.describeSessions(ctx, s, region, filters, "Active")
