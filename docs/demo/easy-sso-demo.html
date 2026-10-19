@@ -559,6 +559,9 @@
         font: inherit;
         color: var(--blue);
       }
+      .client-url {
+        overflow-wrap: anywhere;
+      }
       .empty {
         padding: 16px 0;
         line-height: 24px;
@@ -680,6 +683,11 @@
             then Tab leaves the workspace.
           </p>
           <p>
+            Open the Example DocumentDB bookmark in Databases to see the
+            DataGrip steps. <code>c</code> / <code>C</code> simulate copying the
+            DataGrip URL / the client URI; the demo never uses your clipboard.
+          </p>
+          <p>
             Backup uses virtual files in memory. Import
             <code>demo/bookmarks-backup.json</code> to preview an addition and a
             conflict. Export to a new virtual filename, then import it. No files
@@ -795,6 +803,23 @@
           endpoint: "analytics.example.invalid",
           dbPort: "5432",
           localPort: "15433",
+          relay: "i-0123456789abcdef0",
+          relayRegion: "us-east-1",
+          auth: "tunnel",
+          database: "",
+          dbUser: "",
+          ca: "",
+        },
+        {
+          id: "demo-docdb",
+          kind: "db",
+          name: "Example DocumentDB",
+          account: "111111111111",
+          region: "us-east-1",
+          endpoint:
+            "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com",
+          dbPort: "27017",
+          localPort: "37017",
           relay: "i-0123456789abcdef0",
           relayRegion: "us-east-1",
           auth: "tunnel",
@@ -930,6 +955,7 @@
           exited: false,
           cleanup: scenario === "cleanup-failure",
           failConnect: scenario === "connection-failure",
+          caCached: false,
           notice: "Select a saved connection or press n to add one.",
           files: new Map(),
         };
@@ -1110,6 +1136,102 @@
           c.relayRegion,
         ]);
       }
+      // DocumentDB mirrors internal/ui/documentdb.go. Copies are simulated:
+      // the demo never touches the real clipboard.
+      const documentDBLogin =
+        "Tunnel only · your DocumentDB user stays in your client";
+      const demoCAPath = "~/.config/easy-sso/rds-ca-aws.pem";
+      function isDocumentDB(c) {
+        return (
+          c.kind === "db" &&
+          /\.(?:docdb\.amazonaws\.com(?:\.cn)?|docdb-elastic\.amazonaws\.com)$/i.test(
+            c.endpoint,
+          )
+        );
+      }
+      function isDocumentDBElastic(c) {
+        return /\.docdb-elastic\.amazonaws\.com$/i.test(c.endpoint);
+      }
+      // DocumentDB routes name 127.0.0.1, as DataGrip must; others keep localhost.
+      function routeHost(c) {
+        return isDocumentDB(c) ? "127.0.0.1" : "localhost";
+      }
+      function activeTunnel(r) {
+        return ["Listening", "Connected"].includes(r.status);
+      }
+      function dataGripURL(port) {
+        return (
+          "mongodb://127.0.0.1:" +
+          port +
+          "/?directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true"
+        );
+      }
+      // The port of an open tunnel on the same route, else the bookmark's own.
+      function documentDBPort(c) {
+        const run = state.runs
+          .slice()
+          .reverse()
+          .find(
+            (r) =>
+              activeTunnel(r) &&
+              r.connection.kind === "db" &&
+              routeKey(r.connection) === routeKey(c),
+          );
+        return run ? run.connection.localPort : c.localPort;
+      }
+      // The DocumentDB bookmark or open run that c and C act on: the review
+      // first, then the selected row.
+      function documentDBTarget() {
+        const fromRun = (r) => {
+          if (!r || !isDocumentDB(r.connection)) return null;
+          if (!activeTunnel(r)) {
+            note("Tunnel not open; Enter on the bookmark reopens it.");
+            return null;
+          }
+          return { c: r.connection, port: r.connection.localPort };
+        };
+        const r = state.review;
+        if (r) {
+          if (r.kind === "connection")
+            return isDocumentDB(r.connection)
+              ? { c: r.connection, port: documentDBPort(r.connection) }
+              : null;
+          return r.kind === "run" ? fromRun(r.run) : null;
+        }
+        const item = selected();
+        if (state.view === 1)
+          return item && isDocumentDB(item)
+            ? { c: item, port: documentDBPort(item) }
+            : null;
+        return [2, 3].includes(state.view) ? fromRun(item) : null;
+      }
+      function copyDocumentDBKey(key) {
+        const target = documentDBTarget();
+        if (!target) return false;
+        const elastic = isDocumentDBElastic(target.c);
+        if (key === "c")
+          note(
+            "Copied DataGrip URL for 127.0.0.1:" +
+              target.port +
+              " (simulated). " +
+              (elastic
+                ? "In SSH/SSL turn on Use SSL with no CA file; enter your DocumentDB user in DataGrip."
+                : "In SSH/SSL set the CA file and Verify CA; enter your DocumentDB user in DataGrip."),
+          );
+        else if (elastic)
+          note(
+            "Copied client URI (elastic clusters need no tlsCAFile) (simulated). In a shell, wrap it in single quotes.",
+          );
+        else {
+          if (!target.c.ca) state.caCached = true;
+          note(
+            "Copied client URI with tlsCAFile " +
+              (target.c.ca || demoCAPath) +
+              " (simulated). In a shell, wrap it in single quotes.",
+          );
+        }
+        return true;
+      }
       function validate(c) {
         if (!c.name?.trim() || !/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(c.region))
           return "Enter a display name and a valid resource region.";
@@ -1157,6 +1279,8 @@
             return "Local ports must be 1024–65535 and DB ports 1–65535.";
           if (!["tunnel", "postgres-iam"].includes(c.auth))
             return "Choose postgres-iam or tunnel for authentication.";
+          if (c.auth === "postgres-iam" && isDocumentDB(c))
+            return "PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel";
           if (
             c.auth === "postgres-iam" &&
             (!c.database.trim() || !c.dbUser.trim())
@@ -1273,6 +1397,14 @@
             state.tab = run.id;
             state.notice =
               "Terminal connected. Ctrl+] returns to the AWS workspace.";
+          } else if (isDocumentDB(c)) {
+            state.caCached = true;
+            state.notice =
+              "Tunnel open at 127.0.0.1:" +
+              c.localPort +
+              " · profile [" +
+              p.name +
+              "]. Connect DataGrip or any MongoDB client with your DocumentDB user; c copies the URL, v shows steps. (Simulated)";
           } else
             state.notice =
               "Tunnel open at localhost:" +
@@ -1352,13 +1484,49 @@
       }
       function advanceField(step = 1) {
         const f = state.form;
+        const old = f.index;
         f.index =
           (f.index +
             step +
             f.fields.length +
             (f.kind === "activation" ? 1 : 0)) %
           (f.fields.length + (f.kind === "activation" ? 1 : 0));
-        focusForm();
+        if (!leaveField(old)) focusForm();
+      }
+      // Mirrors leaveField in internal/ui/forms.go: once focus leaves the
+      // endpoint of a new database form, a DocumentDB host switches fields
+      // still at their defaults. Returns true when it changed and rendered.
+      function leaveField(old) {
+        const f = state.form;
+        if (
+          !f ||
+          f.kind !== "db" ||
+          f.original ||
+          old !== 1 ||
+          f.index === old ||
+          !isDocumentDB({
+            kind: "db",
+            endpoint: String(f.data.endpoint).trim(),
+          })
+        )
+          return false;
+        const changed = [
+          ["dbPort", "5432", "27017", "DB port 27017"],
+          ["localPort", "15432", "37017", "local port 37017"],
+          ["auth", "postgres-iam", "tunnel", "auth to tunnel"],
+        ]
+          .filter(([key, from]) => String(f.data[key]).trim() === from)
+          .map(([key, , to, name]) => {
+            f.data[key] = to;
+            return name;
+          });
+        if (!changed.length) return false;
+        note(
+          changed.length === 3
+            ? "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel"
+            : "DocumentDB endpoint: set " + changed.join(", "),
+        );
+        return true;
       }
       function focusForm() {
         const field = $("field-" + state.form.index);
@@ -1464,6 +1632,19 @@
       function details() {
         const item = selected();
         if (!item) return;
+        if (
+          state.view === 3 &&
+          isDocumentDB(item.connection) &&
+          activeTunnel(item) &&
+          !item.connection.ca
+        )
+          state.caCached = true;
+        if (
+          [2, 3].includes(state.view) &&
+          isDocumentDB(item.connection) &&
+          !activeTunnel(item)
+        )
+          state.notice = "Tunnel not open; Enter on the bookmark reopens it.";
         state.review =
           state.view < 2
             ? { kind: "connection", connection: copy(item), details: true }
@@ -1714,11 +1895,24 @@
             render();
           } else if (key === "enter") confirmReview();
           else if (key === "c" && r.kind === "exit") finishExit(true);
+          else if (
+            (key === "c" || key === "C") &&
+            ["connection", "run"].includes(r.kind)
+          )
+            copyDocumentDBKey(key);
           else if (key === " " && r.kind === "import") {
             r.replace = !r.replace;
             render();
           } else if (key === "e" && r.kind === "connection")
             newForm(r.connection);
+          else if (
+            key === "l" &&
+            r.kind === "connection" &&
+            isDocumentDB(r.connection)
+          )
+            note(
+              "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client.",
+            );
           else if (
             key === "l" &&
             r.kind === "connection" &&
@@ -1834,12 +2028,17 @@
           } else details();
           return;
         }
+        if ((key === "c" || key === "C") && copyDocumentDBKey(key)) return;
         if (key === "v") return details();
         if (key === "n" && state.view < 2) return newForm();
         if (key === "e" && state.view < 2 && selected())
           return newForm(selected());
         if (key === "l" && state.view === 1 && selected())
-          return newForm(selected(), true);
+          return isDocumentDB(selected())
+            ? note(
+                "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client.",
+              )
+            : newForm(selected(), true);
         if (key === "w" && state.view === 0)
           return note(
             "Browser demo cannot open an OS terminal; use Connect terminal.",
@@ -1943,32 +2142,91 @@
               "Login",
               c.auth === "postgres-iam"
                 ? c.dbUser + " @ " + c.database + " · PostgreSQL IAM"
-                : "Tunnel only · Edit to enable PostgreSQL IAM",
+                : isDocumentDB(c)
+                  ? documentDBLogin
+                  : "Tunnel only · Edit to enable PostgreSQL IAM",
             ],
             [
               "Route",
-              "localhost:" +
+              routeHost(c) +
+                ":" +
                 c.localPort +
                 " → DB:" +
                 c.dbPort +
                 " · " +
                 c.region,
             ],
+            ...(isDocumentDB(c)
+              ? [["Client", "DataGrip / any MongoDB client · c copies URL"]]
+              : []),
           ];
         return [
           ["Name", c.name],
           ["DB endpoint", c.endpoint + ":" + c.dbPort],
+          ["Engine", isDocumentDB(c) ? "DocumentDB" : "PostgreSQL / other"],
           ["DB region", c.region],
           ["Relay", c.relay],
           ["SSM region", c.relayRegion],
-          ["Local route", "localhost:" + c.localPort],
+          ["Local route", routeHost(c) + ":" + c.localPort],
           [
             "Login",
-            c.auth === "postgres-iam" ? "PostgreSQL IAM" : "Tunnel only",
+            c.auth === "postgres-iam"
+              ? "PostgreSQL IAM"
+              : isDocumentDB(c)
+                ? documentDBLogin
+                : "Tunnel only",
           ],
-          ["Database", c.database],
-          ["DB user", c.dbUser],
+          ...(isDocumentDB(c) && c.auth !== "postgres-iam"
+            ? []
+            : [
+                ["Database", c.database],
+                ["DB user", c.dbUser],
+              ]),
         ];
+      }
+      // The DataGrip-first connection guide; it never shows a database user.
+      function documentDBClientHTML(c, port) {
+        const elastic = isDocumentDBElastic(c);
+        const ca = elastic
+          ? "not needed for elastic clusters; keep Use SSL on"
+          : c.ca
+            ? c.ca + " (your RDS CA file)"
+            : demoCAPath +
+              (state.caCached
+                ? " (cached)"
+                : " (downloads when the tunnel opens)");
+        const notes = [
+          elastic
+            ? "The hostname check is off because the route is 127.0.0.1."
+            : "With Verify CA and the CA file, DataGrip checks the certificate chain; the hostname check is off because the route is 127.0.0.1.",
+          "retryWrites=false works on every engine; 8.0.2+ (not elastic, not planner 1.0) may remove it.",
+        ];
+        if (c.endpoint.toLowerCase().includes(".cluster-ro-"))
+          notes.push(
+            "Reader endpoint: read-only for every user; use the cluster endpoint to write.",
+          );
+        return (
+          section("DATAGRIP (or any MongoDB client)", [
+            ["Data source", "File > New > Data Source > Amazon DocumentDB"],
+            ["Host / Port", "127.0.0.1 / " + port + " · Database blank"],
+            [
+              "Authentication",
+              "User & Password: your read-only or read-write DocumentDB user, saved in DataGrip",
+            ],
+            [
+              "SSH/SSL",
+              elastic
+                ? "Use SSL on · no CA file · SSH tunnel off"
+                : "Use SSL on · CA file below · Mode Verify CA · SSH tunnel off",
+            ],
+            ["CA file", ca],
+            [
+              "Users",
+              "One tunnel serves every user: one data source each · C copies URI for mongosh/Compass/drivers",
+            ],
+          ]) +
+          `<p class="notice">URL (c copies):<br><code class="client-url">${esc(dataGripURL(port))}</code><br>${notes.map(esc).join("<br>")}</p>`
+        );
       }
       function identityRows(p) {
         return [
@@ -1989,7 +2247,11 @@
             ["Started", new Date(r.started).toLocaleString()],
             ["SSM session", "example-session-" + r.id],
             ["Managed alias", r.alias],
-          ]) + section("CONNECTION", connectionRows(r.connection))
+          ]) +
+          section("CONNECTION", connectionRows(r.connection)) +
+          (isDocumentDB(r.connection) && activeTunnel(r)
+            ? documentDBClientHTML(r.connection, r.connection.localPort)
+            : "")
         );
       }
       function roleDetails(r) {
@@ -2073,7 +2335,11 @@
           body =
             section("CONNECTION", connectionRows(r.connection)) +
             section("IDENTITY", identityRows(currentProfile()));
-          if (r.connection.kind === "db")
+          if (isDocumentDB(r.connection) && r.connection.auth !== "postgres-iam")
+            body +=
+              '<p class="notice">p: edit local port<br>Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.</p>' +
+              documentDBClientHTML(r.connection, documentDBPort(r.connection));
+          else if (r.connection.kind === "db")
             body +=
               '<p class="notice">p: edit local port<br>Saving login settings does not configure AWS or database permissions.<br>Connect terminal simulates PostgreSQL IAM login; no real token is created.</p>';
           controls =
@@ -2086,7 +2352,8 @@
             ) +
             (r.connection.kind === "ec2" ? button("New window", "w") : "") +
             button("Edit", "e");
-          if (r.connection.kind === "db" && r.connection.auth === "tunnel")
+          if (isDocumentDB(r.connection)) controls += button("Copy URL", "c");
+          else if (r.connection.kind === "db" && r.connection.auth === "tunnel")
             controls += button("Set up IAM", "l");
           const duplicate = state.runs.some(
             (x) =>
@@ -2115,7 +2382,10 @@
                 ? button("Focus terminal", "enter", "primary")
                 : "") +
               button("Disconnect / stop", "d", "danger") +
-              button("Recheck", "r");
+              button("Recheck", "r") +
+              (isDocumentDB(r.run.connection) && activeTunnel(r.run)
+                ? button("Copy URL", "c")
+                : "");
         } else if (["role", "remove"].includes(r.kind)) {
           title = "Details / Credentials";
           body = roleDetails(r.role);
@@ -2174,6 +2444,10 @@
             ["v", "Connection details."],
             ["n / e", "New connection / edit selected connection."],
             ["l", "Set up database IAM login."],
+            [
+              "c / C",
+              "DocumentDB: copy the DataGrip URL / the URI with tlsCAFile for mongosh, Compass and drivers. No user or password is copied.",
+            ],
             ["p", "Override local port in connection review."],
             ["N / f", "In duplicate EC2 review: new shell / focus shell."],
             ["w", "OS windows are unavailable in this offline simulation."],
@@ -2186,6 +2460,10 @@
             ["d", "Review stop or credential removal."],
             ["r", "Recheck a run or renew a credential."],
             ["R", "In Credentials: retry simulated SSO cleanup."],
+            [
+              "c / C",
+              "Open DocumentDB tunnel: copy the DataGrip URL / client URI.",
+            ],
           ],
         ],
         [
@@ -2276,9 +2554,11 @@
                   : ""),
               button("Edit", "e") +
                 button("Details", "v") +
-                (item.kind === "db" && item.auth === "tunnel"
-                  ? button("Set up IAM", "l")
-                  : ""),
+                (isDocumentDB(item)
+                  ? button("Copy URL", "c")
+                  : item.kind === "db" && item.auth === "tunnel"
+                    ? button("Set up IAM", "l")
+                    : ""),
             );
           }
           if (!list.length)
@@ -2312,7 +2592,7 @@
           let html = `<div class="heading"><h1>&gt; ${views[state.view]} / all accounts</h1></div>`;
           if (item)
             html +=
-              `<p>Selected: ${esc(item.connection.name)} · ${item.status}<br>Run profile: ${esc(item.profile.name)} · ${item.profile.account}${state.view === 3 ? " · localhost:" + esc(item.connection.localPort) : ""}</p>` +
+              `<p>Selected: ${esc(item.connection.name)} · ${item.status}<br>Run profile: ${esc(item.profile.name)} · ${item.profile.account}${state.view === 3 ? " · " + routeHost(item.connection) + ":" + esc(item.connection.localPort) : ""}</p>` +
               toolbar(
                 button(
                   state.tabs.includes(item.id)
@@ -2323,7 +2603,11 @@
                   "enter",
                   "primary",
                 ) + button("Disconnect / stop", "d", "danger"),
-                button("Details", "v") + button("Recheck", "r"),
+                button("Details", "v") +
+                  button("Recheck", "r") +
+                  (isDocumentDB(item.connection) && activeTunnel(item)
+                    ? button("Copy URL", "c")
+                    : ""),
               );
           if (!list.length)
             return (
@@ -2496,10 +2780,13 @@
         }
       });
       $("app").addEventListener("focusin", (event) => {
+        if (!state.form) return;
+        const old = state.form.index;
         if (event.target.hasAttribute("data-field"))
           state.form.index = +event.target.dataset.field;
         if (event.target.hasAttribute("data-ack"))
           state.form.index = state.form.fields.length;
+        leaveField(old);
       });
       $("app").addEventListener("change", (event) => {
         const t = event.target;
@@ -2571,7 +2858,7 @@
           return;
         if (event.target.type === "checkbox" && key === " ") return;
         const recognized =
-          /^[1-6?AysqnvelfdrcwNjk ]$/.test(key) ||
+          /^[1-6?AysqnvelfdrcCwNjk ]$/.test(key) ||
           [
             "enter",
             "esc",

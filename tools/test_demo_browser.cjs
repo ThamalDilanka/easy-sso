@@ -165,6 +165,59 @@ const { chromium } = require(
     await nav(3);
     assert.equal(await pane.locator("[data-row]").count(), 2);
 
+    // DocumentDB: DataGrip steps, no IAM setup, simulated copies only.
+    await nav(1);
+    await pane.locator('[data-row="2"]').click();
+    await has(pane, "c copies URL");
+    assert.equal(await pane.locator('[data-key="l"]').count(), 0);
+    await action("v");
+    await has(pane, "directConnection=true");
+    await has(pane, "Verify CA");
+    await has(pane, "Engine");
+    await has(pane, "DocumentDB");
+    assert.ok(!(await pane.innerText()).includes("rds_iam"));
+    assert.equal(await pane.locator('[data-key="l"]').count(), 0);
+    await action("c");
+    await has(status, "Copied");
+    await has(status, "127.0.0.1:37017 (simulated)");
+    await key("C");
+    await has(status, "Copied client URI with tlsCAFile");
+    await key("Escape");
+    await action("enter");
+    await idle();
+    await has(status, "Connect DataGrip or any MongoDB client");
+    await nav(3);
+    assert.equal(await pane.locator("[data-row]").count(), 3);
+    await action("c");
+    await has(status, "Copied DataGrip URL for 127.0.0.1:37017");
+    await has(pane, " · 127.0.0.1:37017");
+    await action("v");
+    await has(pane, "(cached)");
+    await has(pane, "127.0.0.1 / 37017");
+    await key("Escape");
+    await action("d");
+    await action("enter");
+    await has(pane, "Stopped");
+    await action("v");
+    await has(status, "Tunnel not open; Enter on the bookmark reopens it.");
+    await key("Escape");
+
+    // A new DocumentDB endpoint switches fields still at their defaults.
+    await nav(1);
+    await action("n");
+    await field(1).fill(
+      "example-new.cluster-c0example.us-east-1.docdb.amazonaws.com",
+    );
+    await field(1).press("Tab");
+    await has(
+      status,
+      "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel",
+    );
+    assert.equal(await field(3).inputValue(), "27017");
+    assert.equal(await field(6).inputValue(), "37017");
+    assert.equal(await field(7).inputValue(), "tunnel");
+    await field(7).press("Escape");
+
     // Multi-role activation requires acknowledgement; renew retains alias.
     await reset();
     await page.locator(".shortcut-buttons [data-key=A]").click();
@@ -221,7 +274,7 @@ const { chromium } = require(
     await action("i");
     await field(0).fill("demo/exported-bookmarks.json");
     await field(0).press("Enter");
-    await has(pane, "Additions: 0 | Conflicts: 7");
+    await has(pane, "Additions: 0 | Conflicts: 8");
 
     // Selecting a scenario only applies on reset; failures and retry are usable.
     await page.locator("#scenario").selectOption("expired");

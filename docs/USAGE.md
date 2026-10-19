@@ -95,6 +95,111 @@ Validation uses fake AWS calls and a real local `psql`/TLS protocol fixture. Thi
 
 After a restart, Tunnels automatically checks older records using their original managed profile. Closed sessions become stopped history. **Remote active** means AWS verified the saved session; **Stop (d)** terminates that exact session. **Needs login** names the original profile to renew; **Check failed** explains an identity, permission or network problem; **Port in use** means local listener cleanup still needs checking. Use **Recheck (r)** to retry immediately. Recovery does not reconnect, restore terminal screens or kill processes by saved PID.
 
+## DocumentDB tunnels (DataGrip and other clients)
+
+Amazon DocumentDB bookmarks open a tunnel with your SSO credentials only. Your DocumentDB user and password stay in DataGrip or your other MongoDB client: easy-sso never asks for, copies or stores them, and its copied strings never contain a DocumentDB user name or password. The CA file it handles is the public AWS certificate bundle, not a secret.
+
+An endpoint ending in `.docdb.amazonaws.com`, `.docdb.amazonaws.com.cn` or `.docdb-elastic.amazonaws.com` is treated as DocumentDB, and reviews show **Engine** `DocumentDB`. In a new connection, leaving the endpoint field switches fields still at their defaults to DB port 27017, local port 37017 and Auth `tunnel` (`DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel`). `postgres-iam` is refused for DocumentDB when saving, editing, connecting or importing (`PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel`), and **Set up IAM (l)** explains that it is for PostgreSQL. DocumentDB bookmarks use the existing tunnel format; no new bookmark field is added.
+
+**Prerequisites:**
+
+- The relay EC2 instance runs in the cluster's VPC or in a peered VPC. AWS documents tunnel access from outside the VPC through such an instance ([connecting from outside a VPC](https://docs.aws.amazon.com/documentdb/latest/developerguide/connect-from-outside-a-vpc.html)).
+- The cluster's security group allows inbound TCP on the cluster port (27017 by default; elastic clusters use only 27017) from the relay.
+- The relay runs SSM Agent 3.1.1374.0 or later, which remote-host port forwarding requires ([Session Manager port forwarding](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-sessions-start.html)). Your role needs the same Session Manager permission on the relay as any database tunnel.
+- Your administrator has created the DocumentDB users you log in with, for example one read-only and one read-write user. AWS role permissions do not decide what a DocumentDB user may read or write.
+- Copy keys use the system clipboard: native Linux needs `xclip`, `xsel` or `wl-copy`, and WSL uses `clip.exe`, which needs WSL interop. macOS tunnels need `lsof` for the listener check.
+
+**Open the tunnel.** Press `Enter` on the saved bookmark. The status reads `Tunnel open at 127.0.0.1:37017 · profile [<profile>]. Connect DataGrip or any MongoDB client with your DocumentDB user; c copies the URL, v shows steps.` The connection review and the run details (`v` in Tunnels) show a **DATAGRIP (or any MongoDB client)** block with the values below; the URL sits alone on its line so you can also select it by hand. `c` and `C` work in Databases, in the connection review, and on an open run in Sessions, Tunnels or run details. They use the open tunnel's port, otherwise the bookmark's local port. On a run that is no longer open they report `Tunnel not open; Enter on the bookmark reopens it.`
+
+**Logins.** easy-sso does not log in to DocumentDB; the tunnel is transport only. Add one DataGrip data source per DocumentDB user, for example a read-only and a read-write one; both point at the same `127.0.0.1` port, so one open tunnel serves them (`One tunnel serves every user: one data source each`). Each client keeps its own saved password.
+
+**CA bundle.** Leave **RDS CA file (blank: automatic)** empty and easy-sso downloads the public AWS certificate bundle for the commercial and GovCloud partitions. It is cached for 24 hours and checked when the tunnel opens, when you open its details (`v`) and when you press `C`:
+
+| Platform | Cached CA file |
+| --- | --- |
+| Linux and WSL | `~/.config/easy-sso/rds-ca-aws.pem` |
+| macOS | `~/Library/Application Support/easy-sso/rds-ca-aws.pem` |
+| Native Windows | `%APPDATA%\easy-sso\rds-ca-aws.pem` |
+
+GovCloud bookmarks use `rds-ca-aws-us-gov.pem` in the same folder, and `--state-dir` moves the folder. The **CA file** row shows the path and its state, such as `(cached)`, `(cached; refresh failed: …)` when an older valid file is still in place, or `(unavailable: …; Databases > Edit (e) > RDS CA file)`. A CA failure never blocks or changes the tunnel; it only changes that text and the status (`CA bundle unavailable: … Fix: Databases > Edit (e) > RDS CA file.`). Set **RDS CA file** to an existing PEM bundle to work offline or to use your own copy; easy-sso then only checks it. China (`aws-cn`) bookmarks need an explicit file: the row reads `aws-cn needs an RDS CA file (Databases > Edit)`, and `C` copies the URI without `tlsCAFile`.
+
+**Elastic clusters.** Clusters with a `.docdb-elastic.amazonaws.com` endpoint need no CA file: AWS's DataGrip guide says to keep **Use SSL** checked and leave the CA file out, and easy-sso shows no CA path for them. An elastic cluster can also have a `.docdb.amazonaws.com` host; easy-sso cannot tell it apart and shows a CA row, so for such an elastic cluster leave the CA file out anyway. See [DocumentDB TLS](https://docs.aws.amazon.com/documentdb/latest/developerguide/security.encryption.ssl.html) and [AWS CA bundles](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html).
+
+**DataGrip.** Open the tunnel first, then choose **File > New > Data Source > Amazon DocumentDB** ([JetBrains guide](https://www.jetbrains.com/help/datagrip/documentdb.html)):
+
+| Tab | Field | Value |
+| --- | --- | --- |
+| General | Host / Port | `127.0.0.1` and the tunnel's local port (37017 by default) |
+| General | Authentication | **User & Password**, with your read-only or read-write DocumentDB user, saved in DataGrip |
+| General | Database | blank |
+| General | URL | press `c` in easy-sso and paste |
+| General | Read preference, Replica set | empty |
+| SSH/SSL | Use SSL | on |
+| SSH/SSL | CA file | the **CA file** row (on WSL, the Windows path; see below). Elastic: none |
+| SSH/SSL | Client certificate file, Client key file | empty |
+| SSH/SSL | Mode | **Verify CA** |
+| SSH/SSL | Use SSH tunnel | off; easy-sso is the tunnel |
+
+`c` copies the DataGrip URL, for example:
+
+```text
+mongodb://127.0.0.1:37017/?directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true
+```
+
+It never carries `tlsCAFile`: the bundle goes in DataGrip's **CA file** field, and TLS is DataGrip's **Use SSL** setting. With Verify CA and the CA file, DataGrip checks the certificate chain; the hostname check is off because the route is `127.0.0.1`. Each option has a reason:
+
+| Option | Why |
+| --- | --- |
+| `directConnection=true` | Talk to the one host behind the tunnel instead of discovering replica set members. AWS says connecting in replica set mode (`replicaSet=rs0`) through a tunnel results in an error. |
+| `retryWrites=false` | Engines before 8.0.2 reject retryable writes with error 301; elastic clusters and clusters on query planner 1.0 do not support them either ([retryable writes](https://docs.aws.amazon.com/documentdb/latest/developerguide/retryable-writes.html)). |
+| `authSource=admin` | DocumentDB has no authentication database; every login happens in `admin`. This matters once a database name is in the URL. |
+| `tlsAllowInvalidHostnames=true` | The certificate names the cluster endpoint, but the client connects to `127.0.0.1`. AWS's own tunnel example turns the hostname check off the same way; the chain is still checked against the CA file. |
+
+easy-sso has no engine version setting. `retryWrites=false` works on every engine; on 8.0.2 and later (not elastic, not planner 1.0) you may remove it to get automatic write retries back.
+
+**Reader endpoints are read-only.** With `directConnection=true`, a connection to the reader endpoint (`.cluster-ro-` in the host) is read-only for every user, including a read-write user. easy-sso adds `Reader endpoint: read-only for every user; use the cluster endpoint to write.` to the steps. Use the cluster endpoint, such as `example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com`, to write.
+
+**Other clients.** `C` copies a URI with TLS and the CA file for mongosh, Compass and drivers, with the CA path URL-encoded:
+
+```text
+mongodb://127.0.0.1:37017/?tls=true&directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true&tlsCAFile=<encoded CA path>
+```
+
+The status reads `Copied client URI with tlsCAFile <path>. In a shell, wrap it in single quotes.` The `&` characters split the command otherwise.
+
+- **mongosh:** `mongosh '<pasted URI>' --username <your DocumentDB user>` prompts for the password and hides it as you type. mongosh officially supports MongoDB server 7.0 and later. DocumentDB 5.0, 8.0 and elastic clusters work with it in practice; 3.6 and 4.0 do not work at all. mongosh enables retryable writes by default, so keep `retryWrites=false` in the URI.
+- **Compass:** paste the URI, or set the fields from MongoDB's Compass documentation: **Direct Connection** on the General tab, then on the TLS/SSL tab set TLS to **On**, **Certificate Authority** to the CA file and tick **tlsAllowInvalidHostnames**. AWS does not document Compass with DocumentDB.
+- **Drivers:** the URI carries no user; give the driver your user and password through its credential options. AWS documents `tlsCAFile` with the bundle for Python and Node, and a custom TLS setup for Go, Java and C# ([connecting programmatically](https://docs.aws.amazon.com/documentdb/latest/developerguide/connect_programmatically.html)).
+- **Java truststore fallback (Java and DataGrip):** if a Java client or DataGrip does not accept the PEM bundle, build a JKS truststore from the bundle with the `keytool` script in AWS's Java instructions. In DataGrip, add `-Djavax.net.ssl.trustStore=<path to truststore.jks> -Djavax.net.ssl.trustStorePassword=<truststore password>` to **Advanced > VM options** for that data source, and keep `tlsAllowInvalidHostnames=true` in the URL.
+
+### WSL (Windows DataGrip, easysso in WSL)
+
+This setup follows Microsoft's WSL networking documentation; it has not yet been tested end to end on a live cluster.
+
+When easysso runs inside WSL and DataGrip runs on Windows, the tunnel listens on `127.0.0.1` inside WSL and DataGrip connects to the same `127.0.0.1:<port>` from Windows. Microsoft documents two ways this reaches Windows:
+
+- **NAT mode** (the default): `localhostForwarding`, on by default, makes ports bound to localhost in WSL connectable from Windows. Setting `localhostForwarding=false` in `.wslconfig` stops Windows clients from reaching the tunnel.
+- **Mirrored mode** (`networkingMode=mirrored`, Windows 11 22H2 and later): Windows and WSL share `127.0.0.1`.
+
+Use `127.0.0.1`, never `localhost`: mirrored mode does not support the IPv6 localhost address `::1`. See [WSL networking](https://learn.microsoft.com/en-us/windows/wsl/networking) and [WSL settings](https://learn.microsoft.com/en-us/windows/wsl/wsl-config).
+
+**CA file for Windows clients.** Under WSL the **DATAGRIP (or any MongoDB client)** block shows two rows: **CA file Windows** first, then **CA file WSL** (the Linux path, for tools inside WSL). Press `x` in Databases, the connection review, or on an open run in Sessions, Tunnels or run details. It copies the CA bundle to `%USERPROFILE%\.easy-sso\rds-ca-aws.pem` and puts that Windows path on the clipboard: `Copied the CA file to <path> and its path to the clipboard. DataGrip: SSH/SSL > CA file, paste, Mode Verify CA.` In Databases, `x` needs no open tunnel. The row then shows the path with `(copied by x)`, and pressing `x` again reports `Windows CA file is up to date: <path>. Path copied to the clipboard.`
+
+Earlier exports are refreshed automatically: whenever easysso checks the bundle (tunnel open, `v`, `C`) and AWS has changed it, the Windows copy is rewritten, and after a restart easysso finds the earlier export and keeps it current, so DataGrip keeps reading the same path. The file is created in your Windows profile folder, which by default only you, SYSTEM and administrators can change. A custom **RDS CA file** is exported under its own file name; one already on a Windows drive (`/mnt/<drive>/…`) is not copied, and `x` only copies its Windows path. Elastic clusters need no CA file (`Elastic clusters need no CA file; keep Use SSL on.`). Outside WSL, `x` reports `x is for WSL; clients here read the CA file directly: <path>.` If Windows holds the file open during a refresh, close the DataGrip connection and press `x` again.
+
+Before an export, the **CA file Windows** row shows the WSL share path, `\\wsl.localhost\<distro>\…\.config\easy-sso\rds-ca-aws.pem · x copies it to Windows`. `\\wsl.localhost` can start the distribution on Windows 11; the older `\\wsl$\<distro>\…` form works only while the distribution is running. The cached file is private to your Linux user, so prefer `x` if DataGrip cannot read the share path. Under WSL, `C` puts the exported Windows path (or else the share path) into `tlsCAFile`, because the clients run on Windows; edit it if you run mongosh inside WSL. `c` ends its status with the CA file to use, such as `CA file: <path>.`
+
+**When WSL interop is off**, `x` and the copy keys cannot run Windows commands. `x` reports `Windows home folder not found (is WSL interop on?). Copy it yourself: cp '<source>' /mnt/c/certs/`. Copy the file yourself and use `C:\certs\rds-ca-aws.pem` as the CA file:
+
+```sh
+mkdir -p /mnt/c/certs
+cp ~/.config/easy-sso/rds-ca-aws.pem /mnt/c/certs/
+```
+
+A manual copy is not refreshed; repeat it after AWS changes the bundle. Prefer a folder inside your Windows profile; folders such as `C:\certs` may be writable by other local users.
+
+**Ports and firewall.** In NAT mode, easysso checks only Linux ports, so a Windows program already listening on the tunnel's local port is not detected, and DataGrip may reach that program instead. Pick another local port with `p` in the connection review or **Edit (e)**. Windows 11 22H2 and later with WSL 2.0.9 and later filter WSL traffic through the Hyper-V firewall. Loopback traffic between Windows and WSL is allowed by default, but managed laptops can change that; ask your IT team if Windows clients cannot connect while tools inside WSL can. See the [Hyper-V firewall](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/hyper-v-firewall).
+
 ## Troubleshooting
 
 ### Unsafe permissions on `~/.aws`
@@ -124,3 +229,17 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 **Cause:** the field takes a shell document only, by name or by an ARN in the instance's partition and region. Access denied means the role's `ssm:StartSession` policy does not allow that document for the instance, or the document is not shared with the account.
 
 **Fix:** clear the field to use the Session Manager default, correct the name or ARN, or ask your AWS administrator to allow the document in the role's `ssm:StartSession` policy. To use an older easy-sso release, first clear the session document from every bookmark.
+
+### DocumentDB clients
+
+- **`PKIX path building failed` or `unable to find valid certification path` in DataGrip:** check that **CA file** points at the bundle from the **CA file** row (the Windows path under WSL) and that **Mode** is **Verify CA**. If it still fails, use the Java truststore fallback above.
+- **Certificate hostname mismatch:** the URL needs `tlsAllowInvalidHostnames=true`. Paste the URL from `c` again instead of typing it.
+- **`Driver class 'com.dbschema.MongoJdbcDriver' not found`:** add the MongoDB driver to the data source manually in DataGrip. On DataGrip 2026.1, JetBrains recommends MongoDB driver version 1.21 rather than 1.20.
+- **Replica set errors:** remove `replicaSet=rs0` from the URL and leave DataGrip's **Replica set** field empty. Through a tunnel, connect with `directConnection=true`.
+- **Error 301 or a retryable writes error:** keep `retryWrites=false` in the URL. mongosh enables retryable writes unless the URI turns them off.
+- **Writes fail for a read-write user:** check for `.cluster-ro-` in the endpoint. Reader endpoints are read-only for every user; save a bookmark for the cluster endpoint to write.
+- **Not-primary write errors after a failover:** the cluster endpoint moves to the new primary through DNS, and AWS does not document when the relay resolves it again. Stop the tunnel in **Tunnels** and open it again, then reconnect the client (not yet tested on a live cluster).
+- **Login fails with a password that contains `%` followed by two characters:** DataGrip's driver encodes the user and password itself. Set `auto_encode_username_and_password=false` on the data source's **Advanced** tab and type each `%` as `%25`.
+- **Elastic cluster, but a CA row is shown:** its host ends in `.docdb.amazonaws.com`, so easy-sso cannot tell it is elastic. Leave the CA file out and keep **Use SSL** on.
+- **`Could not copy (install xclip or wl-clipboard on Linux). The URL is in Details (v).`:** install a clipboard tool, or select the URL line in the details by hand. Under WSL, the copy keys need WSL interop.
+- **WSL: Windows DataGrip cannot connect or cannot read the CA file:** use `127.0.0.1`, press `x` and paste the Windows path into **CA file**, and check `localhostForwarding`, the local port and the firewall as described in [WSL](#wsl-windows-datagrip-easysso-in-wsl).

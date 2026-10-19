@@ -15,7 +15,7 @@ The application uses Go and Bubble Tea. The official AWS CLI v2 and Session Mana
 | `spec` | Single canonical JSON schema, embedded by bookmark validation and included in packages |
 | `internal/store` | Bounded reads, atomic private writes, ownership checks, settings transactions |
 | `internal/sessions` | Freeze run identity, correlate exact SSM sessions, verify listeners, stop and recover owned runs |
-| `internal/database` | PostgreSQL client setup, CA handling, token redaction, authenticated prompt detection |
+| `internal/database` | PostgreSQL client setup, public AWS CA bundle download and 24-hour cache (shared with DocumentDB tunnels), CA export to `%USERPROFILE%\.easy-sso` under WSL, token redaction, authenticated prompt detection |
 | `internal/process`, `internal/ipc` | Owned child processes and authenticated local helper communication |
 | `internal/terminal` | Embedded PTYs and platform-specific external window adapters |
 | `internal/ui` | State updates, contextual keyboard/mouse dispatch, shared controls and presentation |

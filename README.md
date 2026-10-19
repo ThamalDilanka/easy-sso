@@ -2,7 +2,7 @@
 
 **Your AWS accounts, roles, and connections. One terminal workspace.**
 
-Sign in to AWS, choose a role, and open an EC2 shell or PostgreSQL session from a keyboard-and-mouse terminal app. Save connections, see which identity each session uses, and manage shells and database tunnels in one place.
+Sign in to AWS, choose a role, and open an EC2 shell, a PostgreSQL session or a DocumentDB tunnel from a keyboard-and-mouse terminal app. Save connections, see which identity each session uses, and manage shells and database tunnels in one place.
 
 [![easy-sso terminal workspace showing the account and profile sidebar, active credentials, saved EC2 connections, and connection actions](docs/images/terminal-ui.png)](https://thamaldilanka.github.io/easy-sso/)
 
@@ -11,6 +11,7 @@ _Click the screenshot to open the interactive demo._
 - Switch between configured AWS accounts and roles, with identity and credential expiry visible.
 - Reconnect to saved EC2 instances through AWS Systems Manager Session Manager.
 - Open database tunnels and PostgreSQL IAM terminals with hostname-verified TLS.
+- Open Amazon DocumentDB tunnels for DataGrip or any MongoDB client, with copyable connection settings and the public AWS certificate bundle; your DocumentDB user stays in your client.
 - Inspect and stop individual sessions or tunnels, and export connection bookmarks without credentials.
 
 Built on the official **AWS CLI v2** and **Session Manager plugin**, with no background credential renewal or telemetry. You use your own AWS profiles and permissions; easy-sso does not grant access or configure your AWS resources.
@@ -36,9 +37,9 @@ interactive workflows.
 
 ### 1. Install the prerequisites
 
-Install [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html). Install `psql` as well if you want PostgreSQL IAM terminals on Linux, WSL, or macOS.
+Install [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html). Install `psql` as well if you want PostgreSQL IAM terminals on Linux, WSL, or macOS. For DocumentDB tunnels, bring DataGrip or your own MongoDB client.
 
-For WSL, install these tools inside your Linux distribution. Native Windows uses Windows Terminal for external EC2 shell windows and supports database tunnels; embedded PostgreSQL terminals are available on Linux, WSL, and macOS.
+For WSL, install these tools inside your Linux distribution. Native Windows uses Windows Terminal for external EC2 shell windows and supports database tunnels; embedded PostgreSQL terminals are available on Linux, WSL, and macOS. With easysso in WSL, DataGrip on Windows can use the WSL tunnel; see [WSL and DocumentDB](docs/USAGE.md#wsl-windows-datagrip-easysso-in-wsl).
 
 You do not need Go, Make, or a source checkout to install a release.
 
@@ -149,7 +150,7 @@ Diagnostics checks prerequisites, profile definitions, and AWS folder permission
 3. Press **Enter** on a saved connection to reconnect. On Linux, WSL, and macOS, use **Shift+Tab** to cycle through terminal tabs and **Ctrl+]** to return to the workspace.
 4. Open **Sessions** or **Tunnels** to inspect or stop a run. Press **?** for the shortcut reference.
 
-Database connections require an existing SSM relay and network access to the endpoint. PostgreSQL IAM login also requires an IAM-enabled database, an authorized database user, and the appropriate AWS role permissions. See the [usage guide](docs/USAGE.md#postgresql-iam-terminals) for setup details and tunnel-only access with your own database client.
+Database connections require an existing SSM relay and network access to the endpoint. PostgreSQL IAM login also requires an IAM-enabled database, an authorized database user, and the appropriate AWS role permissions. See the [usage guide](docs/USAGE.md#postgresql-iam-terminals) for setup details and tunnel-only access with your own database client. DocumentDB connections use your own DocumentDB user in DataGrip or another MongoDB client; see [DocumentDB tunnels](docs/USAGE.md#documentdb-tunnels-datagrip-and-other-clients).
 
 Use **Ctrl+T** to switch light/dark themes. Mouse navigation, ASCII mode, and `NO_COLOR` are supported. The [full usage guide](docs/USAGE.md) covers credential renewal, bookmark import/export, keyboard controls, and session recovery.
 
@@ -189,11 +190,11 @@ You can also download a release through your browser for a manual upgrade.
 
 | Platform | Terminal experience | Validation |
 | --- | --- | --- |
-| Linux / WSL | Embedded EC2 and PostgreSQL tabs; optional external EC2 windows | Linux amd64 tested, including real PTYs with simulated AWS; WSL interop needs native validation |
-| macOS | Embedded tabs; optional Terminal.app windows | Cross-built; native validation pending |
-| Windows | External EC2 windows through Windows Terminal; database tunnels | Cross-built; native validation pending |
+| Linux / WSL | Embedded EC2 and PostgreSQL tabs; DocumentDB tunnels; optional external EC2 windows | Linux amd64 tested, including real PTYs with simulated AWS; WSL interop needs native validation |
+| macOS | Embedded tabs; DocumentDB tunnels; optional Terminal.app windows | Cross-built; native validation pending |
+| Windows | External EC2 windows through Windows Terminal; database tunnels, including DocumentDB | Cross-built; native validation pending |
 
-Live AWS/RDS qualification is still pending. Automated tests use simulated AWS responses and do not establish production readiness. See [validation](docs/VALIDATION.md) for the checks and remaining limitations.
+Live AWS/RDS and DocumentDB qualification is still pending. Automated tests use simulated AWS responses and do not establish production readiness. See [validation](docs/VALIDATION.md) for the checks and remaining limitations.
 
 ## Contributing
 
