@@ -768,6 +768,7 @@
           account: "111111111111",
           region: "us-west-2",
           instance: "i-00000000000000001",
+          document: "Example-ShellDocument",
         },
         {
           id: "demo-postgres",
@@ -831,6 +832,7 @@
           ["name", "Display name"],
           ["instance", "Instance ID"],
           ["region", "Instance region"],
+          ["document", "Session document (optional)"],
         ],
         db: [
           ["name", "Display name"],
@@ -942,6 +944,7 @@
             id: "demo-imported",
             name: "Example imported server",
             instance: "i-00000000000000004",
+            document: "Example-ShellDocument",
           },
         ]);
         if (["active", "expired", "connection-failure"].includes(scenario))
@@ -1073,7 +1076,14 @@
       function resourceKey(c) {
         return JSON.stringify(
           c.kind === "ec2"
-            ? [c.kind, c.account, c.partition, c.region, c.instance]
+            ? [
+                c.kind,
+                c.account,
+                c.partition,
+                c.region,
+                c.instance,
+                ...(c.document ? [c.document] : []),
+              ]
             : [
                 c.kind,
                 c.account,
@@ -1108,6 +1118,26 @@
           !/^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$/.test(c.instance)
         )
           return "Enter a valid synthetic instance ID, such as i-0123456789abcdef0.";
+        if (c.kind === "ec2" && c.document) {
+          const arn =
+            /^arn:(aws|aws-cn|aws-us-gov):ssm:([a-z]{2}(?:-[a-z]+)+-\d+):\d{12}:document\/([A-Za-z0-9_.-]{3,128})$/.exec(
+              c.document,
+            );
+          const name = arn ? arn[3] : c.document;
+          if (!arn && !/^[A-Za-z0-9_.-]{3,128}$/.test(c.document))
+            return "Session document must be a document name (3-128 letters, digits, _ . -) or a full SSM document ARN.";
+          if (
+            [
+              "AWS-StartPortForwardingSession",
+              "AWS-StartPortForwardingSessionToRemoteHost",
+              "AWS-StartSSHSession",
+              "AWS-StartNonInteractiveCommand",
+            ].some((d) => d.toLowerCase() === name.toLowerCase())
+          )
+            return `${name} is not a shell session document; leave the field blank or use a shell document.`;
+          if (arn && (arn[1] !== c.partition || arn[2] !== c.region))
+            return "Session document ARN must be in the bookmark's partition and region.";
+        }
         if (c.kind === "db") {
           if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(c.endpoint))
             return "Database endpoint must be a hostname without URL, credentials, or port.";
@@ -1288,6 +1318,7 @@
                 account: currentProfile().account,
                 region: currentProfile().region,
                 instance: "",
+                document: "",
                 endpoint: "",
                 dbPort: "5432",
                 localPort: "15432",
@@ -1875,6 +1906,18 @@
           "</dl>"
         );
       }
+      function importSummary(c) {
+        return (
+          esc(c.name) +
+          " | " +
+          c.account +
+          " | " +
+          esc(c.region) +
+          (c.kind === "ec2" && c.document
+            ? " | document " + esc(c.document)
+            : "")
+        );
+      }
       function section(title, rows) {
         return `<div class="detail-heading">${esc(title)}</div><hr class="section-rule">${kv(rows)}`;
       }
@@ -1884,6 +1927,10 @@
             ["Name", c.name],
             ["Instance", c.instance],
             ["Region", c.region],
+            [
+              "Document",
+              c.document || "Default (Session Manager preferences)",
+            ],
             ...(!summary
               ? []
               : [["Last opened", c.lastUsed ? "Just now" : "Never"]]),
@@ -2089,7 +2136,7 @@
           controls = button("Confirm", "enter", "danger");
         } else if (r.kind === "import") {
           title = "Import preview: merge review";
-          body = `<p>Additions: ${r.additions.length} | Conflicts: ${r.conflicts.length}</p>${r.additions.map((c) => "<p>+ " + esc(c.name) + " | " + c.account + " | " + esc(c.region) + "</p>").join("")}${r.conflicts.map((c) => "<p>Conflict: " + esc(c.name) + " | " + c.account + " | " + esc(c.region) + "</p>").join("")}<label><input type="checkbox" data-replace ${r.replace ? "checked" : ""}> ${r.replace ? "Replace conflicting local records (explicit opt-in)" : "Keep local conflicts (default)"}</label><p class="notice">Import never connects or changes credentials.</p>`;
+          body = `<p>Additions: ${r.additions.length} | Conflicts: ${r.conflicts.length}</p>${r.additions.map((c) => "<p>+ " + importSummary(c) + "</p>").join("")}${r.conflicts.map((c) => "<p>Conflict: " + importSummary(c) + "</p>").join("")}<label><input type="checkbox" data-replace ${r.replace ? "checked" : ""}> ${r.replace ? "Replace conflicting local records (explicit opt-in)" : "Keep local conflicts (default)"}</label><p class="notice">Import never connects or changes credentials.</p>`;
           controls = button("Import", "enter", "primary");
         }
         return `<div class="heading"><h1>&gt; ${esc(title)}</h1></div>${toolbar(controls, button("Back", "esc"))}${body}`;

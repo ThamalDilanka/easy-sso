@@ -71,9 +71,11 @@ Exit uses a standalone confirmation when local shells, owned tunnels, confirmed 
 
 Press `?` in the workspace for the contextual shortcut reference.
 
-A rejected SSM shell startup is recorded as Failed. AccessDeniedException is shown as an access-denied explanation for ssm:StartSession on the instance/session document; raw AWS diagnostics remain in the terminal and are not copied into runtime metadata. Closing a failed tab releases its local terminal without attempting to terminate an unconfirmed remote session.
+A rejected SSM shell startup is recorded as Failed. AccessDeniedException is shown as an access-denied explanation for ssm:StartSession on the instance and session document, naming the bookmark's document or `SSM-SessionManagerRunShell` by default; raw AWS diagnostics remain in the terminal and are not copied into runtime metadata. Closing a failed tab releases its local terminal without attempting to terminate an unconfirmed remote session.
 
 Saved EC2 and database connections support **Edit (`e`)** from the list or connection review. Edit any connection field, then press `Ctrl+S` (or Enter on the final field) to save without connecting. `Esc` discards edits. Account ownership stays fixed, and open sessions retain their original route. The database endpoint is a hostname only, separate from the display name.
+
+EC2 bookmarks have an optional **Session document** field. Leave it blank to use the account's Session Manager preferences, as before. Enter a document name such as `Example-ShellDocument`, or the full ARN of a document shared from another account, such as `arn:aws:ssm:us-east-1:111122223333:document/Example-ShellDocument`. An ARN must be in the bookmark's partition and region, because SSM documents are regional. Connect, New window, Reconnect and recovery pass it as `--document-name`. Documents that do not open a shell are refused: `AWS-StartPortForwardingSession`, `AWS-StartPortForwardingSessionToRemoteHost`, `AWS-StartSSHSession` and `AWS-StartNonInteractiveCommand`. easy-sso does not check the document with AWS first, so a misspelled or non-shell custom document fails when the session starts. The same instance with a different document is a separate bookmark. Reviews show the document, and import previews name it so an imported file cannot quietly change which document a shell runs. Releases before 1.2.0 reject a bookmarks file once any bookmark has a session document; files without one stay compatible.
 
 ## PostgreSQL IAM terminals
 
@@ -114,3 +116,11 @@ Then log in again. A refused login publishes nothing and leaves no cleanup pendi
 **WSL:** keep AWS files in the Linux home, not under `/mnt/c`. Windows drives usually ignore `chmod` and report every file as `777`, so the check cannot pass there. If `umask` prints `0000`, add `umask 022` to `~/.bashrc` or `~/.zshrc` so new folders are not created world-writable.
 
 The same rule applies to the application state folder (`~/.config/easy-sso` on Linux): `chmod 700` it if startup reports it as unsafe.
+
+### Session document refused or denied
+
+**Symptom:** saving an EC2 bookmark reports `... is not a shell session document`, `session document must be a document name ...` or `session document ARN must be in the bookmark's partition and region`. Or a shell fails with `Access denied: ... session document (<name>)`.
+
+**Cause:** the field takes a shell document only, by name or by an ARN in the instance's partition and region. Access denied means the role's `ssm:StartSession` policy does not allow that document for the instance, or the document is not shared with the account.
+
+**Fix:** clear the field to use the Session Manager default, correct the name or ARN, or ask your AWS administrator to allow the document in the role's `ssm:StartSession` policy. To use an older easy-sso release, first clear the session document from every bookmark.

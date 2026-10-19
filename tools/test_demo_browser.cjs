@@ -101,12 +101,36 @@ const { chromium } = require(
     await action("n");
     assert.equal(await field(0).inputValue(), "Example draft");
     await field(1).fill("i-00000000000000005");
-    await field(2).press("Enter");
+    await field(3).press("Enter");
     await has(pane, "Review connection");
     await action("enter");
     await page.locator("#command").waitFor();
     await workspace();
     await has(pane, "Example draft");
+
+    // EC2 session documents are optional, checked, and always visible.
+    await reset("active");
+    await nav(0);
+    await has(pane, "Default (Session Manager preferences)");
+    await action("n");
+    assert.equal(
+      await page.locator('label[for="field-3"] span').innerText(),
+      "Session document (optional)",
+    );
+    await field(0).fill("Example shell");
+    await field(1).fill("i-00000000000000006");
+    await field(3).fill("AWS-StartSSHSession");
+    await field(3).press("Enter");
+    await has(status, "not a shell session document");
+    await field(3).fill("  Example-ShellDocument  ");
+    await field(3).press("Enter");
+    await has(pane, "Review connection");
+    await has(pane, "Example-ShellDocument");
+    await reset("active");
+    await nav(5);
+    await action("i");
+    await field(0).press("Enter");
+    await has(pane, "| document Example-ShellDocument");
 
     // Database tunnel/IAM setup and occupied local port.
     await reset("active");
