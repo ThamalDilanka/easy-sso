@@ -27,52 +27,75 @@ func Prepare(ctx context.Context, c domain.Connection, stateDir string) (string,
 	if err != nil {
 		return "", "", errors.New("PostgreSQL client missing: install psql, then retry Connect terminal")
 	}
-	ca := c.CAFile
-	if ca != "" {
-		ca, err = filepath.Abs(ca)
+	ca, err := EnsureCA(ctx, c, stateDir)
+	if err != nil {
+		return "", "", err
+	}
+	return path, ca, nil
+}
+
+// caURLs are the official public AWS bundles. China has none, so it needs an
+// explicit CA file.
+var caURLs = map[string]string{
+	"aws":        "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
+	"aws-us-gov": "https://truststore.pki.us-gov-west-1.rds.amazonaws.com/global/global-bundle.pem",
+}
+
+var caClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
+
+// CAPath names the CA bundle a connection uses, without any I/O.
+func CAPath(c domain.Connection, stateDir string) (string, error) {
+	if c.CAFile != "" {
+		ca, err := filepath.Abs(c.CAFile)
 		if err != nil {
-			return "", "", errors.New("invalid RDS CA file path")
+			return "", errors.New("invalid RDS CA file path")
 		}
+		return ca, nil
+	}
+	if caURLs[c.Partition] == "" {
+		return "", errors.New("set the RDS CA file for this AWS partition before connecting")
+	}
+	return filepath.Join(stateDir, "rds-ca-"+c.Partition+".pem"), nil
+}
+
+// EnsureCA returns a valid CA bundle path. An explicit file is only checked;
+// the public AWS bundle is reused for 24h, then downloaded and cached.
+func EnsureCA(ctx context.Context, c domain.Connection, stateDir string) (string, error) {
+	ca, err := CAPath(c, stateDir)
+	if err != nil {
+		return "", err
+	}
+	if c.CAFile != "" {
 		data, e := os.ReadFile(ca)
 		if e != nil || !validCA(data) {
-			return "", "", errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
+			return "", errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
 		}
-		return path, ca, nil
+		return ca, nil
 	}
-	urls := map[string]string{
-		"aws":        "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-		"aws-us-gov": "https://truststore.pki.us-gov-west-1.rds.amazonaws.com/global/global-bundle.pem",
-	}
-	url := urls[c.Partition]
-	if url == "" {
-		return "", "", errors.New("set the RDS CA file for this AWS partition before connecting")
-	}
-	ca = filepath.Join(stateDir, "rds-ca-"+c.Partition+".pem")
 	if info, e := os.Stat(ca); e == nil && time.Since(info.ModTime()) < 24*time.Hour {
 		if data, e := os.ReadFile(ca); e == nil && validCA(data) {
-			return path, ca, nil
+			return ca, nil
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, caURLs[c.Partition], nil)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
-	res, err := client.Do(req)
+	res, err := caClient.Do(req)
 	if err != nil {
-		return "", "", errors.New("could not download the AWS RDS CA bundle; check network access or set a local CA file")
+		return "", errors.New("could not download the AWS RDS CA bundle; check network access or set a local CA file")
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(res.Body, 1024*1024+1))
 	if err != nil || res.StatusCode != http.StatusOK || len(data) > 1024*1024 || !validCA(data) {
-		return "", "", errors.New("AWS RDS CA bundle download was invalid")
+		return "", errors.New("AWS RDS CA bundle download was invalid")
 	}
 	if err = store.AtomicWrite(ca, data); err != nil {
-		return "", "", errors.New("could not cache the public RDS CA bundle")
+		return "", errors.New("could not cache the public RDS CA bundle")
 	}
-	return path, ca, nil
+	return ca, nil
 }
 
 func validCA(data []byte) bool { return x509.NewCertPool().AppendCertsFromPEM(data) }
