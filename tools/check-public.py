@@ -104,8 +104,12 @@ def scan_history(revs, terms):
         oid, _, name = item.partition(b" ")
         if git("cat-file", "-t", oid.decode()).strip() == b"blob":
             failures += scan(f"history:{oid.decode()[:12]}:{name.decode()}", git("cat-file", "blob", oid.decode()), terms)
-    identities = git("log", *revs, "--format=%an <%ae>%n%cn <%ce>%n%B")
-    return failures + scan("commit metadata", identities, terms)
+    # A GitHub noreply author or committer is a public identity; its display
+    # name may match a private term, so only the email rules apply to it.
+    for line in git("log", *revs, "--format=%an <%ae>%n%cn <%ce>").decode().splitlines():
+        public = line.lower().endswith("@users.noreply.github.com>")
+        failures += scan("commit identity", line.encode(), [] if public else terms)
+    return failures + scan("commit metadata", git("log", *revs, "--format=%B"), terms)
 
 
 def main():

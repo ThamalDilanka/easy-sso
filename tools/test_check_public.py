@@ -100,6 +100,18 @@ class PrivateDenylistTests(unittest.TestCase):
         self.assertIn("commit metadata", output)
         self.assertWithheld(output)
 
+    def test_commit_identity_name_is_public_but_message_is_checked(self):
+        public = self.repo.git("rev-parse", "HEAD")
+        self.repo.git("-c", "user.name=Zyxample Corp", "commit", "-q", "--allow-empty", "-m", "chore: empty")
+        tip = self.repo.git("rev-parse", "HEAD")
+        code, output = self.repo.check(self.denylist, "--revs", f"{public}..{tip}")
+        self.assertEqual(code, 0, output)
+        self.repo.git("commit", "-q", "--allow-empty", "-m", "docs: thanks Zyxample Corp")
+        tip = self.repo.git("rev-parse", "HEAD")
+        code, output = self.repo.check(self.denylist, "--revs", f"{public}..{tip}")
+        self.assertEqual(code, 1, output)
+        self.assertWithheld(output)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,7 +20,7 @@ Never commit credentials, SSO cache files, diagnostic dumps, personal paths, com
 
 Run `make hooks` once per clone. The pre-push hook scans only the commits a push would publish, including commit messages, and refuses the push on a finding or when gitleaks is missing.
 
-Company, profile, document and other private names must never be written into the repository, not even into a check. List them, one case-insensitive term per line, in a local file outside the clone: `~/.config/easy-sso-dev/public-denylist`, or set `EASY_SSO_PUBLIC_DENYLIST`. `tools/check-public.py` refuses a denylist inside the repository and reports matches without the term or the file path.
+Company, profile, document and other private names must never be written into the repository, not even into a check. List them, one case-insensitive term per line, in a local file outside the clone: `~/.config/easy-sso-dev/public-denylist`, or set `EASY_SSO_PUBLIC_DENYLIST`. `tools/check-public.py` refuses a denylist inside the repository and reports matches without the term or the file path. A commit author or committer with a GitHub noreply email is a public identity, so its display name is not matched against the denylist; commit messages and file contents always are.
 
 ## Pull requests
 
