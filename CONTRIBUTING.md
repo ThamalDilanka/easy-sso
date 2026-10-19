@@ -16,7 +16,11 @@ Use `gofmt`. Add behavioral tests for changed identity, lifecycle, persistence, 
 
 Use `testdata/aws-config.ini` for profile examples. It deliberately uses reserved example domains and synthetic account IDs. Do not replace it with your AWS config. Use `example.com`, `example.invalid`, or clearly marked example endpoints and the synthetic account IDs accepted by `tools/check-public.py`.
 
-Never commit credentials, SSO cache files, diagnostic dumps, personal paths, company account topology, or real terminal recordings. `make check` scans tracked and new nonignored files for common accidental disclosures. This is a focused guard, not a substitute for reviewing the diff and scanning Git history before publication.
+Never commit credentials, SSO cache files, diagnostic dumps, personal paths, company account topology, or real terminal recordings. `make check` scans tracked and new nonignored files for common accidental disclosures, and runs a pinned gitleaks (installed by `make tools` into ignored `bin/tools/`) over the history. This is a focused guard, not a substitute for reviewing the diff and scanning Git history before publication.
+
+Run `make hooks` once per clone. The pre-push hook scans only the commits a push would publish, including commit messages, and refuses the push on a finding or when gitleaks is missing.
+
+Company, profile, document and other private names must never be written into the repository, not even into a check. List them, one case-insensitive term per line, in a local file outside the clone: `~/.config/easy-sso-dev/public-denylist`, or set `EASY_SSO_PUBLIC_DENYLIST`. `tools/check-public.py` refuses a denylist inside the repository and reports matches without the term or the file path.
 
 ## Pull requests
 

@@ -1,0 +1,28 @@
+#!/bin/sh
+# Refuse a push whose outgoing commits carry secrets or private names.
+# Install with `make hooks`. Findings never print the matched value.
+set -u
+root=$(git rev-parse --show-toplevel) || exit 1
+gitleaks=${EASY_SSO_GITLEAKS:-$root/bin/tools/gitleaks}
+if [ ! -x "$gitleaks" ]; then
+	echo "pre-push: gitleaks is not installed; run 'make tools'. Push refused." >&2
+	exit 1
+fi
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# Deleting a remote ref publishes nothing.
+	case $local_sha in *[!0]*) ;; *) continue ;; esac
+	# Scan only what the remote lacks; a remote tip unknown locally falls back
+	# to everything not already on a remote-tracking ref.
+	if expr "$remote_sha" : '.*[^0]' >/dev/null && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+		revs="$remote_sha..$local_sha"
+	else
+		revs="$local_sha --not --remotes"
+	fi
+	python3 "$root/tools/check-public.py" --revs "$revs" || status=1
+	"$gitleaks" git --redact --no-banner --log-opts="$revs" "$root" || status=1
+done
+if [ "$status" -ne 0 ]; then
+	echo "pre-push: public-data checks failed for $remote_ref. Push refused." >&2
+fi
+exit "$status"

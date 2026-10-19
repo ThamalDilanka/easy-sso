@@ -14,6 +14,9 @@
 __pycache__/
 *.pyc
 
+# Private names for tools/check-public.py live outside the repository.
+public-denylist*
+
 # Local agent plans, notes and design scratch.
 /.claude/
 /design/
