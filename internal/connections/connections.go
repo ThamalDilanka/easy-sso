@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode"
@@ -127,6 +128,9 @@ func decode(b []byte) (document, error) {
 	}
 	return d, nil
 }
+
+var docdbDatabaseRE = regexp.MustCompile("^[A-Za-z0-9_-]{1,63}$")
+
 func Validate(c domain.Connection) error {
 	for _, s := range []string{c.ID, c.Name, c.LastUsedProfile, c.LastUsedRole, c.Endpoint, c.Region, c.RelayRegion, c.Database, c.DBUser, c.CAFile, c.DocumentName} {
 		if strings.IndexFunc(s, func(r rune) bool { return unicode.IsControl(r) }) >= 0 {
@@ -149,6 +153,14 @@ func Validate(c domain.Connection) error {
 	}
 	if c.IAMDatabase() && (strings.TrimSpace(c.Database) == "" || strings.TrimSpace(c.DBUser) == "") {
 		return errors.New("PostgreSQL IAM login requires a database name and database username")
+	}
+	if c.DocDBIAM() {
+		if c.DBUser != "" {
+			return errors.New("DocumentDB IAM login uses your role ARN as the user; leave the database username blank")
+		}
+		if c.Database != "" && !docdbDatabaseRE.MatchString(c.Database) {
+			return errors.New("DocumentDB database name may use only letters, digits, _ and -")
+		}
 	}
 	if c.DocumentName != "" {
 		if c.Kind != "ec2" {
@@ -202,7 +214,7 @@ func ResourceKey(c domain.Connection) string {
 		return strings.Join(parts, "|")
 	}
 	parts := []string{c.Kind, c.Partition, c.AccountID, strings.ToLower(c.Endpoint), fmt.Sprint(c.DBPort), c.Region, c.RelayInstanceID, c.RelayRegion}
-	if c.IAMDatabase() {
+	if c.IAMDatabase() || c.DocDBIAM() {
 		login, _ := json.Marshal([]string{c.AuthMode, c.Database, c.DBUser})
 		parts = append(parts, string(login))
 	}

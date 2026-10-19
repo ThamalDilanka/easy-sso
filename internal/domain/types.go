@@ -72,6 +72,12 @@ type Connection struct {
 // IAMDatabase identifies the PostgreSQL terminal workflow. Empty auth mode is legacy tunnel-only.
 func (c Connection) IAMDatabase() bool { return c.Kind == "db" && c.AuthMode == "postgres-iam" }
 
+// DocDBIAM identifies the DocumentDB IAM (MONGODB-AWS) mongosh workflow.
+func (c Connection) DocDBIAM() bool { return c.Kind == "db" && c.AuthMode == "docdb-iam" }
+
+// DatabaseClient reports whether the bookmark opens an authenticated client terminal after the tunnel.
+func (c Connection) DatabaseClient() bool { return c.IAMDatabase() || c.DocDBIAM() }
+
 type Run struct {
 	ID          string     `json:"id"`
 	Connection  Connection `json:"connection"`

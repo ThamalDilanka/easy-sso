@@ -183,6 +183,9 @@ func (m *Manager) open(ctx context.Context, c domain.Connection, role domain.Man
 	if !connections.CompatibleRegion(c.Partition, c.Region) || (c.Kind == "db" && !connections.CompatibleRegion(c.Partition, c.RelayRegion)) {
 		return domain.Run{}, errors.New("connection region is incompatible with the selected AWS partition")
 	}
+	if c.DocDBIAM() {
+		return domain.Run{}, errors.New("DocumentDB IAM login is not available in this build")
+	}
 	if role.Status != "Active" && role.Status != "active" {
 		return domain.Run{}, errors.New("activate this role before connecting")
 	}

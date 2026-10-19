@@ -30,3 +30,14 @@ printf '%s\n' 'signed-token'
 		t.Fatal("raw token error exposed")
 	}
 }
+
+// DatabaseToken is the PostgreSQL signer; DocumentDB IAM login signs inside
+// the mongo client, so a docdb-iam bookmark must never reach it.
+func TestDatabaseTokenRefusesDocDBIAM(t *testing.T) {
+	// The fake signs successfully, so only the IAMDatabase guard can refuse.
+	c := fakeClient(t, "printf '%s\\n' 'signed-token'\n")
+	db := domain.Connection{Kind: "db", Name: "docs", Partition: "aws", AccountID: "123456789012", Region: "us-east-1", Endpoint: "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com", DBPort: 27017, LocalPort: 37017, RelayInstanceID: "i-0123456789abcdef0", RelayRegion: "us-west-2", AuthMode: "docdb-iam", Database: "app_db"}
+	if token, err := c.DatabaseToken(context.Background(), snapshot(), db); err == nil || token != "" {
+		t.Fatalf("DatabaseToken = %q, %v", token, err)
+	}
+}

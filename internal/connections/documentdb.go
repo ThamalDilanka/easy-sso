@@ -31,5 +31,13 @@ func DocumentDBMode(c domain.Connection) error {
 	if c.IAMDatabase() && DocumentDBEndpoint(c.Endpoint) {
 		return errors.New("PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel")
 	}
+	if c.DocDBIAM() {
+		if !DocumentDBEndpoint(c.Endpoint) {
+			return errors.New("DocumentDB IAM login needs a DocumentDB endpoint; set Auth to tunnel")
+		}
+		if DocumentDBElastic(c.Endpoint) {
+			return errors.New("Elastic clusters do not support IAM login; set Auth to tunnel")
+		}
+	}
 	return nil
 }

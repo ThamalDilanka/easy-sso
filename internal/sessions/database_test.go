@@ -421,3 +421,18 @@ type deniedDatabaseCLI struct{ deniedCLI }
 func (deniedDatabaseCLI) DatabaseToken(context.Context, domain.Snapshot, domain.Connection) (string, error) {
 	return "", errors.New("token signing must not occur after SSM denial")
 }
+
+func TestDocDBIAMOpenNotYetSupported(t *testing.T) {
+	c, role, s, f := fixture(t)
+	c.Endpoint = "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com"
+	c.DBPort = 27017
+	c.AuthMode, c.Database = "docdb-iam", "app_db"
+	m := manager(t, f, &bookmarks{}, Options{})
+	_, err := m.Open(context.Background(), c, role, s)
+	if err == nil || err.Error() != "DocumentDB IAM login is not available in this build" {
+		t.Fatalf("Open = %v", err)
+	}
+	if len(f.starts) != 0 {
+		t.Fatalf("transport started: %v", f.starts)
+	}
+}

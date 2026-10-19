@@ -115,7 +115,8 @@
         "authMode": {
           "enum": [
             "tunnel",
-            "postgres-iam"
+            "postgres-iam",
+            "docdb-iam"
           ]
         },
         "database": {
@@ -251,6 +252,30 @@
               "database",
               "dbUser"
             ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "authMode"
+            ],
+            "properties": {
+              "authMode": {
+                "const": "docdb-iam"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "dbUser"
+              ]
+            },
+            "properties": {
+              "database": {
+                "pattern": "^[A-Za-z0-9_-]{1,63}$"
+              }
+            }
           }
         }
       ]
