@@ -237,7 +237,7 @@ const { chromium } = require(
     await idle();
     await has(status, "simulated SSO cleanup failure");
     await nav(4);
-    await action("c");
+    await action("R");
     await idle();
     await page.locator('.identity [data-key="ctrl+a"]').click();
     await idle();
