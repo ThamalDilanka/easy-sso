@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -685,7 +688,7 @@ func TestDocumentDBWSLClientURI(t *testing.T) {
 		t.Fatalf("WSL C status %q", f.m.status)
 	}
 	key(f.m, "c")
-	if !strings.HasSuffix(f.m.status, "CA file: use the CA file Windows row.") {
+	if !strings.HasSuffix(f.m.status, "CA file: use the CA file Windows row (x copies it to Windows).") {
 		t.Fatalf("WSL c status %q", f.m.status)
 	}
 }
@@ -754,5 +757,229 @@ func TestHelpListsDocumentDBCopy(t *testing.T) {
 	second := strings.LastIndex(help, "c / C")
 	if databasesAt < 0 || tunnelsAt < 0 || first < databasesAt || first > tunnelsAt || second < tunnelsAt {
 		t.Fatalf("help lacks c / C in both sections:\n%s", help)
+	}
+}
+
+const exportedCA = `D:\winhome\.easy-sso\rds-ca-aws.pem`
+
+// exportTo makes the export stub succeed like a real export to D:\winhome.
+func exportTo(f fixture, changed bool, err error) {
+	f.m.services.ExportCA = func(_ context.Context, src string, refreshOnly bool) (domain.CAExport, error) {
+		*f.exports = append(*f.exports, fmt.Sprint(src, " ", refreshOnly))
+		if err != nil {
+			return domain.CAExport{Windows: exportedCA}, err
+		}
+		return domain.CAExport{Windows: exportedCA, Linux: "/mnt/d/winhome/.easy-sso/rds-ca-aws.pem", Changed: changed, Exists: true}, nil
+	}
+}
+
+func TestDocumentDBExportCAKey(t *testing.T) {
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	copied := recordCopies(f)
+	exportTo(f, true, nil)
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	f.conns.items = f.m.connections
+	cmd := press(f.m, "x")
+	if f.m.status != "Copying the CA file to Windows..." || press(f.m, "x") != nil {
+		t.Fatalf("start status %q (or a second export started)", f.m.status)
+	}
+	finish(f.m, cmd)
+	if want := "Copied the CA file to " + exportedCA + " and its path to the clipboard. DataGrip: SSH/SSL > CA file, paste, Mode Verify CA."; f.m.status != want {
+		t.Fatalf("status %q", f.m.status)
+	}
+	if strings.Join(*f.exports, ",") != "/test-state/rds-ca-aws.pem false" || strings.Join(*copied, ",") != exportedCA || len(*f.ensured) != 1 {
+		t.Fatalf("exports %q copied %q ensured %d", *f.exports, *copied, len(*f.ensured))
+	}
+	key(f.m, "v")
+	content := strings.Join(f.m.reviewContent(), "\n")
+	if !strings.Contains(content, exportedCA+" (copied by x)") || strings.Contains(content, `\\wsl.localhost`) {
+		t.Fatalf("Windows row after export:\n%s", content)
+	}
+	key(f.m, "C")
+	if last := (*copied)[len(*copied)-1]; !strings.HasSuffix(last, "tlsCAFile=D%3A%5Cwinhome%5C.easy-sso%5Crds-ca-aws.pem") {
+		t.Fatalf("C after export %q", last)
+	}
+	key(f.m, "c")
+	if !strings.HasSuffix(f.m.status, "CA file: "+exportedCA+".") {
+		t.Fatalf("c after export %q", f.m.status)
+	}
+	key(f.m, "x")
+	key(f.m, "esc")
+	f.sessions.runs = []domain.Run{docdbRun(f, 37018)}
+	finish(f.m, f.m.load())
+	f.m.screen = tunnels
+	f.m.selectedRow = 0
+	key(f.m, "x")
+	key(f.m, "v")
+	key(f.m, "x")
+	explicit := 0
+	for _, e := range *f.exports {
+		if e == "/test-state/rds-ca-aws.pem false" {
+			explicit++
+		}
+	}
+	if explicit != 4 {
+		t.Fatalf("explicit exports %d: %q", explicit, *f.exports)
+	}
+	noCredentials(t, *copied)
+}
+
+func TestDocumentDBExportCAStatuses(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		changed bool
+		err     error
+		copyErr error
+		want    string
+	}{
+		{"unchanged", false, nil, nil, "Windows CA file is up to date: " + exportedCA + ". Path copied to the clipboard."},
+		{"clipboard", true, nil, errors.New("no clipboard"), "Copied the CA file to " + exportedCA + ". Could not copy its path; it is in Details (v)."},
+		{"no home", false, database.ErrNoWindowsHome, nil, "Windows home folder not found (is WSL interop on?). Copy it yourself: cp '/test-state/rds-ca-aws.pem' /mnt/c/certs/"},
+		{"link", false, store.ErrLink, nil, `Refusing to write through a link in D:\winhome\.easy-sso; remove it or copy the file yourself.`},
+		{"foreign", false, database.ErrNotCABundle, nil, exportedCA + " exists and is not a CA bundle; move it away, then press x again."},
+		{"in use", false, store.ErrInUse, nil, "Windows has " + exportedCA + " open; close the DataGrip connection, then press x again."},
+		{"other", false, errors.New("disk full"), nil, "Could not copy the CA file to Windows: disk full."},
+	} {
+		f := setupUI(t)
+		t.Setenv("WSL_DISTRO_NAME", "Example")
+		recordCopies(f)
+		if tc.copyErr != nil {
+			f.m.services.CopyText = func(string) error { return tc.copyErr }
+		}
+		exportTo(f, tc.changed, tc.err)
+		f.m.connectionReview(docdbBookmark(f))
+		key(f.m, "x")
+		if f.m.status != tc.want {
+			t.Errorf("%s: status %q", tc.name, f.m.status)
+		}
+		if tc.err != nil && f.m.ca["/test-state/rds-ca-aws.pem"].win != "" {
+			t.Errorf("%s: failed export adopted", tc.name)
+		}
+	}
+
+	// No valid CA: nothing is exported. A stale but valid file still is.
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	recordCopies(f)
+	exportTo(f, true, nil)
+	f.m.services.EnsureCA = func(context.Context, domain.Connection) (string, error) {
+		return "", errors.New("AWS RDS CA bundle download was invalid")
+	}
+	f.m.connectionReview(docdbBookmark(f))
+	key(f.m, "x")
+	if f.m.status != "CA bundle unavailable: AWS RDS CA bundle download was invalid; nothing copied. Set Databases > Edit (e) > RDS CA file." || len(*f.exports) != 0 {
+		t.Fatalf("unavailable: %q exports %q", f.m.status, *f.exports)
+	}
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	srv := httptest.NewTLSServer(nil)
+	srv.Close()
+	_ = os.WriteFile(filepath.Join(dir, "rds-ca-aws.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600)
+	f.m.services.Prerequisites.StateDir = dir
+	key(f.m, "x")
+	if !strings.HasSuffix(f.m.status, " CA refresh failed: AWS RDS CA bundle download was invalid; copied the cached bundle.") || len(*f.exports) != 1 {
+		t.Fatalf("stale: %q exports %q", f.m.status, *f.exports)
+	}
+}
+
+func TestDocumentDBExportCANoOps(t *testing.T) {
+	f := setupUI(t)
+	copied := recordCopies(f)
+	f.m.connectionReview(docdbBookmark(f))
+	key(f.m, "x")
+	if f.m.status != "x is for WSL; clients here read the CA file directly: /test-state/rds-ca-aws.pem." || len(*f.exports) != 0 {
+		t.Fatalf("native Linux: %q", f.m.status)
+	}
+	old := goos
+	goos = "windows"
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	key(f.m, "x")
+	goos = old
+	if !strings.HasPrefix(f.m.status, "x is for WSL") || len(*f.exports) != 0 {
+		t.Fatalf("native Windows: %q", f.m.status)
+	}
+	for _, tc := range []struct {
+		mutate func(*domain.Connection)
+		want   string
+	}{
+		{func(c *domain.Connection) { c.Endpoint = "example.us-east-1.docdb-elastic.amazonaws.com" }, "Elastic clusters need no CA file; keep Use SSL on."},
+		{func(c *domain.Connection) { c.Partition = "aws-cn" }, "aws-cn needs an RDS CA file (Databases > Edit) before x can copy it."},
+		{func(c *domain.Connection) { c.CAFile = "/mnt/d/certs/global-bundle.pem" }, `CA file is already on Windows: D:\certs\global-bundle.pem. Path copied to the clipboard.`},
+	} {
+		c := docdbBookmark(f)
+		tc.mutate(&c)
+		f.m.connectionReview(c)
+		key(f.m, "x")
+		if f.m.status != tc.want || len(*f.exports) != 0 {
+			t.Fatalf("status %q exports %q", f.m.status, *f.exports)
+		}
+	}
+	if strings.Join(*copied, ",") != `D:\certs\global-bundle.pem` {
+		t.Fatalf("copied %q", *copied)
+	}
+	// RDS, EC2 and credentials ignore x.
+	f.m.review = nil
+	rds := docdbBookmark(f)
+	rds.Endpoint, rds.DBPort, rds.LocalPort = "db.example.rds.amazonaws.com", 5432, 15432
+	f.m.connections = []domain.Connection{rds}
+	for _, s := range []screen{databases, ec2, credentials} {
+		f.m.screen = s
+		f.m.status = "unchanged"
+		key(f.m, "x")
+		if f.m.status != "unchanged" {
+			t.Fatalf("screen %d: %q", s, f.m.status)
+		}
+	}
+	f.m.connectionReview(rds)
+	f.m.status = "unchanged"
+	key(f.m, "x")
+	if f.m.status != "unchanged" || len(*f.exports) != 0 {
+		t.Fatalf("RDS review: %q", f.m.status)
+	}
+}
+
+func TestDocumentDBExportCAPassiveAdopt(t *testing.T) {
+	f := setupUI(t)
+	const path = "/test-state/rds-ca-aws.pem"
+	// Off WSL a CA check never probes Windows.
+	_, cmd := f.m.Update(caMsg{path: path})
+	if cmd != nil {
+		t.Fatal("native CA check started an export")
+	}
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	exportTo(f, false, nil)
+	f.m.status = "unchanged"
+	_, cmd = f.m.Update(caMsg{path: path})
+	finish(f.m, cmd)
+	if strings.Join(*f.exports, ",") != path+" true" || f.m.ca[path].win != exportedCA || f.m.status != "unchanged" {
+		t.Fatalf("adopt: exports %q win %q status %q", *f.exports, f.m.ca[path].win, f.m.status)
+	}
+	exportTo(f, false, errors.New("disk full"))
+	_, cmd = f.m.Update(caMsg{path: path})
+	finish(f.m, cmd)
+	if len(*f.exports) != 2 || f.m.status != "unchanged" {
+		t.Fatalf("refresh: exports %q status %q", *f.exports, f.m.status)
+	}
+	f.m.connectionReview(docdbBookmark(f))
+	if content := strings.Join(f.m.reviewContent(), "\n"); !strings.Contains(content, exportedCA+" (refresh failed: disk full; x retries)") {
+		t.Fatalf("refresh failure row:\n%s", content)
+	}
+	// A probe that found nothing is not repeated for every check.
+	f = setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	for range 2 {
+		_, cmd = f.m.Update(caMsg{path: path})
+		finish(f.m, cmd)
+	}
+	if len(*f.exports) != 1 {
+		t.Fatalf("absent export probed %d times", len(*f.exports))
+	}
+}
+
+func TestHelpListsDocumentDBExport(t *testing.T) {
+	f := setupUI(t)
+	if help := f.m.helpContent(); !strings.Contains(help, `%USERPROFILE%\.easy-sso`) || !strings.Contains(help, "c / C / x") {
+		t.Fatalf("help lacks x:\n%s", help)
 	}
 }

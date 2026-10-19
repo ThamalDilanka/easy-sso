@@ -96,6 +96,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if cmd, ok := m.copyDocumentDBKey(key); ok {
 			return cmd
 		}
+		if cmd, ok := m.exportCAKey(key); ok {
+			return cmd
+		}
 		if key == "w" && r.connection.Kind == "ec2" {
 			return m.openMode(r.connection, true)
 		}
@@ -131,6 +134,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		}
 	case "run":
 		if cmd, ok := m.copyDocumentDBKey(key); ok {
+			return cmd
+		}
+		if cmd, ok := m.exportCAKey(key); ok {
 			return cmd
 		}
 		if key == "f" || key == "enter" {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -28,10 +30,24 @@ type caMsg struct {
 	stale bool
 }
 
+// caResult is the UI state of one CA bundle path. win is its exported
+// Windows copy (WSL only); probed means an earlier export was looked for.
 type caResult struct {
 	ready, inflight, stale bool
-	err                    string
+	exporting, probed      bool
+	err, win, winErr       string
 }
+
+// caExportMsg reports an x export, or a quiet refresh of an earlier one.
+type caExportMsg struct {
+	path     string
+	exp      domain.CAExport
+	err      error
+	quiet    bool
+	feedback string
+}
+
+func wsl() bool { return goos == "linux" && getenv("WSL_DISTRO_NAME") != "" }
 
 func isDocumentDB(c domain.Connection) bool {
 	return c.Kind == "db" && connections.DocumentDBEndpoint(c.Endpoint)
@@ -108,27 +124,177 @@ func (m *Model) ensureCA(c domain.Connection) tea.Cmd {
 	r := m.ca[path]
 	r.inflight = true
 	m.ca[path] = r
-	ensure := m.services.EnsureCA
-	if ensure == nil {
-		dir := m.services.Prerequisites.StateDir
-		ensure = func(ctx context.Context, c domain.Connection) (string, error) { return database.EnsureCA(ctx, c, dir) }
-	}
+	ensure := m.ensurer()
 	return func() tea.Msg {
 		_, err := ensure(context.Background(), c)
 		return caMsg{path: path, err: err, stale: err != nil && database.CachedCA(path)}
 	}
 }
 
-func (m *Model) receiveCA(x caMsg) {
-	r := caResult{ready: x.err == nil}
+// ensurer returns the injected CA check or the default cached AWS bundle.
+func (m *Model) ensurer() func(context.Context, domain.Connection) (string, error) {
+	if ensure := m.services.EnsureCA; ensure != nil {
+		return ensure
+	}
+	dir := m.services.Prerequisites.StateDir
+	return func(ctx context.Context, c domain.Connection) (string, error) { return database.EnsureCA(ctx, c, dir) }
+}
+
+func (m *Model) receiveCA(x caMsg) tea.Cmd {
+	r := m.ca[x.path]
+	r.ready, r.inflight, r.stale, r.err = x.err == nil, false, x.stale, ""
 	if x.err != nil {
-		r.err, r.stale = x.err.Error(), x.stale
+		r.err = x.err.Error()
 		// Only the status that announced this tunnel gains the warning.
 		if m.status != "" && m.status == m.caStatus {
 			m.status += " CA bundle unavailable: " + r.err + "; set Databases > Edit (e) > RDS CA file."
 		}
 	}
 	m.ca[x.path] = r
+	if x.err != nil {
+		return nil
+	}
+	return m.refreshExport(x.path)
+}
+
+// refreshExport quietly looks for an earlier Windows export once, then keeps
+// a found one in step with the bundle. It never creates a new export.
+func (m *Model) refreshExport(path string) tea.Cmd {
+	r := m.ca[path]
+	if !strings.HasPrefix(wslPath(path), `\\`) || r.exporting || (r.probed && r.win == "") {
+		return nil
+	}
+	return m.exportCA(domain.Connection{}, path, true)
+}
+
+func (m *Model) receiveExport(x caExportMsg) {
+	r := m.ca[x.path]
+	r.exporting, r.probed = false, true
+	if x.err == nil && x.exp.Exists {
+		r.win, r.winErr = x.exp.Windows, ""
+	} else if x.err != nil && x.quiet && r.win != "" {
+		r.winErr = x.err.Error()
+	}
+	m.ca[x.path] = r
+	if !x.quiet {
+		m.status = x.feedback
+	}
+}
+
+func (m *Model) exporter() func(context.Context, string, bool) (domain.CAExport, error) {
+	if export := m.services.ExportCA; export != nil {
+		return export
+	}
+	return database.ExportCAToWindows
+}
+
+// exportCAKey handles x: copy the CA file to Windows under WSL and put its
+// Windows path on the clipboard.
+func (m *Model) exportCAKey(key string) (tea.Cmd, bool) {
+	if key != "x" {
+		return nil, false
+	}
+	c, _, ok := m.documentDBTarget()
+	if !ok {
+		return nil, false
+	}
+	path, err := m.caPath(c)
+	switch {
+	case connections.DocumentDBElastic(c.Endpoint):
+		m.status = "Elastic clusters need no CA file; keep Use SSL on."
+	case err != nil && c.Partition == "aws-cn":
+		m.status = "aws-cn needs an RDS CA file (Databases > Edit) before x can copy it."
+	case err != nil:
+		m.status = "Could not copy the CA file to Windows: " + err.Error() + "."
+	case !wsl():
+		m.status = "x is for WSL; clients here read the CA file directly: " + path + "."
+	case !strings.HasPrefix(wslPath(path), `\\`):
+		win, copy := wslPath(path), m.copyText()
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if copy(ctx, win) != nil {
+				return clipboardMsg{"CA file is already on Windows: " + win + ". Could not copy its path; it is in Details (v)."}
+			}
+			return clipboardMsg{"CA file is already on Windows: " + win + ". Path copied to the clipboard."}
+		}, true
+	default:
+		return m.exportCA(c, path, false), true
+	}
+	return nil, true
+}
+
+// exportCA copies path to Windows. A quiet run only refreshes an earlier
+// export and changes no status; an explicit one checks the bundle first and
+// copies the Windows path.
+func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
+	r := m.ca[path]
+	if r.exporting {
+		return nil
+	}
+	r.exporting = true
+	m.ca[path] = r
+	if !quiet {
+		m.status = "Copying the CA file to Windows..."
+	}
+	export, ensure, copy := m.exporter(), m.ensurer(), m.copyText()
+	return func() tea.Msg {
+		msg := caExportMsg{path: path, quiet: quiet}
+		stale := ""
+		if !quiet {
+			if _, err := ensure(context.Background(), c); err != nil {
+				if !database.CachedCA(path) {
+					msg.feedback = "CA bundle unavailable: " + err.Error() + "; nothing copied. Set Databases > Edit (e) > RDS CA file."
+					return msg
+				}
+				stale = " CA refresh failed: " + err.Error() + "; copied the cached bundle."
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		msg.exp, msg.err = export(ctx, path, quiet)
+		if quiet {
+			return msg
+		}
+		if msg.err != nil {
+			msg.feedback = exportFailure(msg.err, msg.exp.Windows, path)
+			return msg
+		}
+		win := msg.exp.Windows
+		ctx, cancelCopy := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelCopy()
+		copied := copy(ctx, win) == nil
+		switch {
+		case msg.exp.Changed && copied:
+			msg.feedback = "Copied the CA file to " + win + " and its path to the clipboard. DataGrip: SSH/SSL > CA file, paste, Mode Verify CA."
+		case msg.exp.Changed:
+			msg.feedback = "Copied the CA file to " + win + ". Could not copy its path; it is in Details (v)."
+		case copied:
+			msg.feedback = "Windows CA file is up to date: " + win + ". Path copied to the clipboard."
+		default:
+			msg.feedback = "Windows CA file is up to date: " + win + ". Could not copy its path; it is in Details (v)."
+		}
+		msg.feedback += stale
+		return msg
+	}
+}
+
+func exportFailure(err error, win, src string) string {
+	switch {
+	case errors.Is(err, database.ErrNoWindowsHome):
+		return "Windows home folder not found (is WSL interop on?). Copy it yourself: cp '" + src + "' /mnt/c/certs/"
+	case errors.Is(err, store.ErrLink):
+		dir := "the Windows folder"
+		if i := strings.LastIndex(win, `\`); i > 0 {
+			dir = win[:i]
+		}
+		return "Refusing to write through a link in " + dir + "; remove it or copy the file yourself."
+	case errors.Is(err, database.ErrNotCABundle):
+		return win + " exists and is not a CA bundle; move it away, then press x again."
+	case errors.Is(err, store.ErrInUse):
+		return "Windows has " + win + " open; close the DataGrip connection, then press x again."
+	}
+	return "Could not copy the CA file to Windows: " + err.Error() + "."
 }
 
 // caRows renders the CA file rows. Under WSL the Windows path comes first,
@@ -154,7 +320,18 @@ func (m *Model) caRows(c domain.Connection, path string, pathErr error) []string
 		suffix = " (unavailable: " + r.err + "; Databases > Edit (e) > RDS CA file)"
 	}
 	if win := wslPath(path); win != "" {
-		return []string{m.detailRow("CA file Windows", win), m.detailRow("CA file WSL", path+suffix)}
+		value := win
+		switch {
+		case r.win != "" && r.winErr != "":
+			value = r.win + " (refresh failed: " + r.winErr + "; x retries)"
+		case r.win != "":
+			value = r.win + " (copied by x)"
+		case strings.HasPrefix(win, `\\`):
+			value = win + " · x copies it to Windows"
+		case c.CAFile != "":
+			value = win + " (your RDS CA file)"
+		}
+		return []string{m.detailRow("CA file Windows", value), m.detailRow("CA file WSL", path+suffix)}
 	}
 	return []string{m.detailRow("CA file", path+suffix)}
 }
@@ -272,8 +449,15 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 		feedback := fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL set the CA file and Verify CA; enter your DocumentDB user in DataGrip.", port)
 		if elastic {
 			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL turn on Use SSL with no CA file; enter your DocumentDB user in DataGrip.", port)
-		} else if wslPath("/") != "" {
-			feedback += " CA file: use the CA file Windows row."
+		} else if path, err := m.caPath(c); err == nil && wsl() {
+			switch win := wslPath(path); {
+			case m.ca[path].win != "":
+				feedback += " CA file: " + m.ca[path].win + "."
+			case strings.HasPrefix(win, `\\`):
+				feedback += " CA file: use the CA file Windows row (x copies it to Windows)."
+			default:
+				feedback += " CA file: " + win + "."
+			}
 		}
 		url := dataGripURL(port)
 		return func() tea.Msg {
@@ -284,10 +468,14 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 		}
 	}
 	path, pathErr := m.caPath(c)
-	ensure := m.services.EnsureCA
-	if ensure == nil {
-		dir := m.services.Prerequisites.StateDir
-		ensure = func(ctx context.Context, c domain.Connection) (string, error) { return database.EnsureCA(ctx, c, dir) }
+	ensure := m.ensurer()
+	// Under WSL the clients run on Windows, so they need a Windows path: the
+	// exported copy if there is one, else the WSL share path.
+	ca := path
+	if win := m.ca[path].win; win != "" {
+		ca = win
+	} else if win := wslPath(path); win != "" {
+		ca = win
 	}
 	return func() tea.Msg {
 		if elastic {
@@ -304,11 +492,6 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 		}
 		_, err := ensure(context.Background(), c)
 		msg := caCopyMsg{path: path, err: err, stale: err != nil && database.CachedCA(path)}
-		// Under WSL the clients run on Windows, so they need the Windows path.
-		ca := path
-		if win := wslPath(path); win != "" {
-			ca = win
-		}
 		if !write(clientURI(port, ca, false)) {
 			msg.feedback = copyFailure()
 			return msg

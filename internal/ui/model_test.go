@@ -186,6 +186,9 @@ type fixture struct {
 	sessions *fakeSessions
 	// ensured records each CA bundle request; no UI test touches the network.
 	ensured *[]domain.Connection
+	// exports records each Windows CA export as "src refreshOnly"; no UI test
+	// reaches cmd.exe or /mnt.
+	exports *[]string
 }
 
 func setupUI(t *testing.T) fixture {
@@ -208,10 +211,15 @@ func setupUI(t *testing.T) fixture {
 		*ensured = append(*ensured, c)
 		return "/test-state/rds-ca-" + c.Partition + ".pem", nil
 	}
+	exports := &[]string{}
+	m.services.ExportCA = func(_ context.Context, src string, refreshOnly bool) (domain.CAExport, error) {
+		*exports = append(*exports, fmt.Sprint(src, " ", refreshOnly))
+		return domain.CAExport{}, nil
+	}
 	m.width = 140
 	m.height = 40
 	finish(m, m.load())
-	return fixture{m, c, b, s, ensured}
+	return fixture{m, c, b, s, ensured, exports}
 }
 func finish(m *Model, cmd tea.Cmd) {
 	if cmd == nil {

@@ -257,17 +257,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = x.feedback
 		return m, nil
 	case caMsg:
-		m.receiveCA(x)
+		return m, m.receiveCA(x)
+	case caExportMsg:
+		m.receiveExport(x)
 		return m, nil
 	case caCopyMsg:
 		// C runs its own check; an automatic one may still be in flight.
-		r := caResult{ready: x.err == nil, stale: x.stale, inflight: m.ca[x.path].inflight}
+		r := m.ca[x.path]
+		r.ready, r.stale, r.err = x.err == nil, x.stale, ""
 		if x.err != nil {
 			r.err = x.err.Error()
 		}
 		m.ca[x.path] = r
 		m.status = x.feedback
-		return m, nil
+		if x.err != nil {
+			return m, nil
+		}
+		return m, m.refreshExport(x.path)
 	case authActionMsg:
 		if m.busy && x.request == m.request && x.url == m.authURL {
 			m.authFeedback = x.feedback

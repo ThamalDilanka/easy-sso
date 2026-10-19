@@ -4,14 +4,21 @@
 package store
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 )
+
+// ErrLink reports a symbolic link anywhere in a storage path.
+var ErrLink = errors.New("unsafe symbolic link in storage path")
 
 func Fingerprint(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
 
@@ -23,7 +30,7 @@ func CheckPath(path string) error {
 	for p := path; ; p = filepath.Dir(p) {
 		st, err := os.Lstat(p)
 		if err == nil && st.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("unsafe symbolic link in storage path")
+			return ErrLink
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -111,6 +118,68 @@ func ExportWrite(path string, b []byte) error {
 	}
 	return syncDir(filepath.Dir(path))
 }
+
+// ErrNotReplaceable reports an existing file that PublicReplace must keep.
+var ErrNotReplaceable = errors.New("destination exists and is not a file this app may replace")
+
+// ErrInUse reports a destination another program holds open.
+var ErrInUse = errors.New("destination is in use")
+
+// PublicReplace atomically writes public, secret-free content into a folder
+// that need not be private, such as a Windows drive under WSL. An existing
+// file is replaced only if replaceable accepts its content; identical
+// content is left untouched.
+func PublicReplace(path string, b []byte, replaceable func([]byte) bool) (bool, error) {
+	if err := CheckPath(filepath.Dir(path)); err != nil {
+		return false, err
+	}
+	if err := CheckPath(path); err != nil {
+		return false, err
+	}
+	if st, err := os.Lstat(path); err == nil {
+		if !st.Mode().IsRegular() {
+			return false, errors.New("storage path must be a regular file")
+		}
+		old, err := Read(path, 1024*1024)
+		if err != nil && !strings.Contains(err.Error(), "size limit") {
+			return false, err
+		}
+		if err == nil && bytes.Equal(old, b) {
+			return false, nil
+		}
+		if err != nil || !replaceable(old) {
+			return false, ErrNotReplaceable
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".easy-sso-ca-*")
+	if err != nil {
+		return false, err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	_ = f.Chmod(0644)
+	if _, err = f.Write(b); err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return false, err
+	}
+	if closeErr != nil {
+		return false, closeErr
+	}
+	if err = replace(name, path); err != nil {
+		if errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EBUSY) {
+			return false, ErrInUse
+		}
+		return false, err
+	}
+	_ = syncDir(filepath.Dir(path)) // network and drvfs folders may refuse fsync
+	return true, nil
+}
+
 func atomicWrite(path string, b []byte) error {
 	if err := CheckPath(path); err != nil {
 		return err

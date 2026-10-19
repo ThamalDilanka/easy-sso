@@ -169,6 +169,13 @@ type TerminalService interface {
 	Exited(string) bool
 }
 
+// CAExport describes a CA bundle copied for Windows clients. Exists is false
+// when nothing was exported.
+type CAExport struct {
+	Windows, Linux  string
+	Changed, Exists bool
+}
+
 type Services struct {
 	Terminals  TerminalService
 	OpenWindow func(context.Context, Connection, ManagedRole, Snapshot) (Run, error)
@@ -188,7 +195,10 @@ type Services struct {
 	CopyText func(string) error
 	// EnsureCA returns a valid public CA bundle path for a database bookmark;
 	// nil selects the cached AWS bundle in Prerequisites.StateDir.
-	EnsureCA     func(context.Context, Connection) (string, error)
+	EnsureCA func(context.Context, Connection) (string, error)
+	// ExportCA copies a public CA bundle to a Windows folder under WSL; nil
+	// selects the default. refreshOnly only rewrites an earlier export.
+	ExportCA     func(ctx context.Context, src string, refreshOnly bool) (CAExport, error)
 	BookmarkPath string
 	// True only for a qualified terminal adapter with stable handles.
 	FocusTerminal bool
