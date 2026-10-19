@@ -462,10 +462,12 @@ func (m *Model) workspaceView() string {
 	if m.help {
 		title = "Keyboard help"
 	} else if m.form != nil {
-		title = "Edit " + m.form.kind
+		title = formTitle(m.form)
 	} else if m.review != nil {
 		title = "Review / " + screenNames[m.screen]
-		if m.review.kind == "connection" {
+		if m.review.kind == "new-database" {
+			title = "New database connection"
+		} else if m.review.kind == "connection" {
 			title = "Review connection"
 			if m.review.details {
 				title = "Connection details"

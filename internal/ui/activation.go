@@ -27,7 +27,7 @@ func (m *Model) activationReview() {
 				}
 			}
 			selections = append(selections, domain.Selection{Profile: p, Alias: alias})
-			fields = append(fields, field{"Published alias for " + p.Name, alias})
+			fields = append(fields, field{label: "Published alias for " + p.Name, value: alias, id: "alias"})
 		}
 	}
 	if len(selections) == 0 {

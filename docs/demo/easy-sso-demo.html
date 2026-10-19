@@ -872,6 +872,19 @@
           ["dbUser", "Database username (IAM)"],
           ["ca", "RDS CA file (blank: automatic)"],
         ],
+        // Shares positions 0-6 with db; only the login fields differ.
+        docdb: [
+          ["name", "Display name"],
+          ["endpoint", "Cluster endpoint (host)"],
+          ["region", "DB region"],
+          ["dbPort", "DB port"],
+          ["relay", "Relay EC2 ID"],
+          ["relayRegion", "Relay / SSM region"],
+          ["localPort", "Local port"],
+          ["auth", "Auth (tunnel / docdb-iam)"],
+          ["database", "Database (optional, IAM)"],
+          ["ca", "CA file (blank: automatic)"],
+        ],
       };
       let state,
         operationTimer,
@@ -1277,8 +1290,10 @@
             +c.localPort > 65535
           )
             return "Local ports must be 1024–65535 and DB ports 1–65535.";
-          if (!["tunnel", "postgres-iam"].includes(c.auth))
+          if (!["tunnel", "postgres-iam", "docdb-iam"].includes(c.auth))
             return "Choose postgres-iam or tunnel for authentication.";
+          if (c.auth === "docdb-iam" && !isDocumentDB(c))
+            return "DocumentDB IAM login needs a DocumentDB endpoint; set Auth to tunnel";
           if (c.auth === "postgres-iam" && isDocumentDB(c))
             return "PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel";
           if (
@@ -1319,6 +1334,8 @@
           );
         const error = validate(c);
         if (error) return note(error);
+        if (c.auth === "docdb-iam")
+          return note("DocumentDB IAM login is not available in this build");
         const duplicate = state.runs.find(
           (r) =>
             isLive(r) &&
@@ -1434,14 +1451,30 @@
           tabs[(tabs.indexOf(state.tab) + step + tabs.length) % tabs.length];
         render();
       }
+      // Mirrors newForm/newDatabaseForm in internal/ui/forms.go: a new database
+      // connection first asks for its type; an edit derives it from the bookmark.
+      function engineOf(c) {
+        return isDocumentDB(c) || c.auth === "docdb-iam"
+          ? "documentdb"
+          : "postgres";
+      }
       function newForm(connection = null, setup = false) {
-        const kind = connection?.kind || (state.view === 1 ? "db" : "ec2");
+        if (!connection && state.view === 1) {
+          state.review = {
+            kind: "new-database",
+            choice: state.drafts[1]?.engine === "documentdb" ? 1 : 0,
+          };
+          return render();
+        }
+        const kind = connection?.kind || "ec2";
+        const engine = kind === "db" ? engineOf(connection) : "";
         if (!connection && state.drafts[state.view])
           state.form = copy(state.drafts[state.view]);
         else
           state.form = {
             kind,
-            fields: connectionFields[kind],
+            engine,
+            fields: connectionFields[engine === "documentdb" ? "docdb" : kind],
             data: copy(
               connection || {
                 kind,
@@ -1465,13 +1498,58 @@
             original: !!connection?.id,
             index: 0,
           };
-        if (setup) {
+        if (setup && engine === "documentdb") {
+          state.form.data.auth = "docdb-iam";
+          state.form.index = 8;
+          state.notice =
+            "DocumentDB IAM login: your role ARN is the user. Enter a database or leave it blank. Ctrl+S saves.";
+        } else if (setup) {
           state.form.data.auth = "postgres-iam";
           state.form.index = state.form.data.database ? 9 : 8;
           state.notice =
             "Enter the database name and database username. Ctrl+S saves login settings.";
         }
         render();
+      }
+      function newDatabaseForm(engine) {
+        state.review = null;
+        const draft = state.drafts[1];
+        if (draft && draft.engine === engine) state.form = copy(draft);
+        else {
+          const docdb = engine === "documentdb";
+          state.form = {
+            kind: "db",
+            engine,
+            fields: connectionFields[docdb ? "docdb" : "db"],
+            data: {
+              kind: "db",
+              name: "",
+              partition: "aws",
+              account: currentProfile().account,
+              region: currentProfile().region,
+              instance: "",
+              document: "",
+              endpoint: "",
+              dbPort: docdb ? "27017" : "5432",
+              localPort: docdb ? "37017" : "15432",
+              relay: "",
+              relayRegion: currentProfile().region,
+              auth: docdb ? "tunnel" : "postgres-iam",
+              database: "",
+              dbUser: "",
+              ca: "",
+            },
+            original: false,
+            index: 0,
+          };
+        }
+        render();
+      }
+      function formTitle(f) {
+        if (f.kind === "activation") return "Review selected destination roles";
+        if (f.kind !== "db" || !f.engine) return "Edit " + f.kind;
+        const engine = f.engine === "documentdb" ? "DocumentDB" : "RDS PostgreSQL";
+        return (f.original ? "Edit " : "New ") + engine + " connection";
       }
       function simpleForm(kind, label, value) {
         state.form = {
@@ -1494,13 +1572,14 @@
         if (!leaveField(old)) focusForm();
       }
       // Mirrors leaveField in internal/ui/forms.go: once focus leaves the
-      // endpoint of a new database form, a DocumentDB host switches fields
-      // still at their defaults. Returns true when it changed and rendered.
+      // endpoint of a new PostgreSQL form, a DocumentDB host only shows a hint
+      // and changes no value. Returns true when it rendered.
       function leaveField(old) {
         const f = state.form;
         if (
           !f ||
           f.kind !== "db" ||
+          f.engine !== "postgres" ||
           f.original ||
           old !== 1 ||
           f.index === old ||
@@ -1510,22 +1589,7 @@
           })
         )
           return false;
-        const changed = [
-          ["dbPort", "5432", "27017", "DB port 27017"],
-          ["localPort", "15432", "37017", "local port 37017"],
-          ["auth", "postgres-iam", "tunnel", "auth to tunnel"],
-        ]
-          .filter(([key, from]) => String(f.data[key]).trim() === from)
-          .map(([key, , to, name]) => {
-            f.data[key] = to;
-            return name;
-          });
-        if (!changed.length) return false;
-        note(
-          changed.length === 3
-            ? "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel"
-            : "DocumentDB endpoint: set " + changed.join(", "),
-        );
+        note("DocumentDB endpoint: press Esc and choose DocumentDB for its defaults.");
         return true;
       }
       function focusForm() {
@@ -1543,6 +1607,18 @@
           for (const key of Object.keys(c))
             if (typeof c[key] === "string") c[key] = c[key].trim();
           if (c.kind === "db") c.endpoint = c.endpoint.toLowerCase();
+          if (f.engine === "documentdb") {
+            if (!isDocumentDB(c))
+              return note(
+                "Enter a DocumentDB cluster endpoint (.docdb.amazonaws.com). For other databases choose RDS PostgreSQL.",
+              );
+            if (!["tunnel", "docdb-iam"].includes(c.auth))
+              return note("Choose tunnel or docdb-iam for authentication.");
+            if (c.auth === "docdb-iam") c.dbUser = "";
+          } else if (f.engine === "postgres" && isDocumentDB(c))
+            return note(
+              "This is a DocumentDB endpoint. Press Esc, then n, and choose DocumentDB.",
+            );
           const error = validate(c);
           if (error) return note(error);
           if (f.original) {
@@ -1893,6 +1969,14 @@
           if (key === "esc") {
             state.review = null;
             render();
+          } else if (r.kind === "new-database") {
+            if (["up", "down", "j", "k"].includes(key)) {
+              r.choice = 1 - r.choice;
+              render();
+            } else if (key === "p") newDatabaseForm("postgres");
+            else if (key === "d") newDatabaseForm("documentdb");
+            else if (key === "enter")
+              newDatabaseForm(r.choice ? "documentdb" : "postgres");
           } else if (key === "enter") confirmReview();
           else if (key === "c" && r.kind === "exit") finishExit(true);
           else if (
@@ -1905,14 +1989,6 @@
             render();
           } else if (key === "e" && r.kind === "connection")
             newForm(r.connection);
-          else if (
-            key === "l" &&
-            r.kind === "connection" &&
-            isDocumentDB(r.connection)
-          )
-            note(
-              "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client.",
-            );
           else if (
             key === "l" &&
             r.kind === "connection" &&
@@ -2034,11 +2110,7 @@
         if (key === "e" && state.view < 2 && selected())
           return newForm(selected());
         if (key === "l" && state.view === 1 && selected())
-          return isDocumentDB(selected())
-            ? note(
-                "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client.",
-              )
-            : newForm(selected(), true);
+          return newForm(selected(), true);
         if (key === "w" && state.view === 0)
           return note(
             "Browser demo cannot open an OS terminal; use Connect terminal.",
@@ -2323,14 +2395,29 @@
       }
       function formHTML() {
         const f = state.form;
-        return `<div class="heading"><h1>&gt; ${f.kind === "activation" ? "Review selected destination roles" : "Edit " + f.kind}</h1></div>${toolbar(button(f.original ? "Save changes" : "Next / review", f.original ? "ctrl+s" : "enter", "primary"), button("Cancel", "esc"))}<div class="fields">${f.fields.map(([key, label], i) => `<label class="field" for="field-${i}"><span>${esc(label)}</span><input id="field-${i}" data-field="${i}" value="${esc(f.data[key])}" autocomplete="off" spellcheck="false" maxlength="4096"></label>`).join("")}${f.kind === "activation" ? `<p class="notice">Existing managed roles are retained.<br>Clear cached AWS CLI SSO logins for all profiles in this environment.<br>Other CLI SSO workflows may need to sign in again.<br>This does not revoke issued role credentials or remove unmanaged copies.<br>All actions in this demo are simulated.</p><label><input id="field-${f.fields.length}" type="checkbox" data-ack ${f.ack ? "checked" : ""}> I acknowledge AWS CLI SSO cleanup.</label>${toolbar(button("Activate roles", "enter", "primary"))}` : ""}</div>`;
+        return `<div class="heading"><h1>&gt; ${esc(formTitle(f))}</h1></div>${toolbar(button(f.original ? "Save changes" : "Next / review", f.original ? "ctrl+s" : "enter", "primary"), button("Cancel", "esc"))}<div class="fields">${f.fields.map(([key, label], i) => `<label class="field" for="field-${i}"><span>${esc(label)}</span><input id="field-${i}" data-field="${i}" value="${esc(f.data[key])}" autocomplete="off" spellcheck="false" maxlength="4096"></label>`).join("")}${f.kind === "activation" ? `<p class="notice">Existing managed roles are retained.<br>Clear cached AWS CLI SSO logins for all profiles in this environment.<br>Other CLI SSO workflows may need to sign in again.<br>This does not revoke issued role credentials or remove unmanaged copies.<br>All actions in this demo are simulated.</p><label><input id="field-${f.fields.length}" type="checkbox" data-ack ${f.ack ? "checked" : ""}> I acknowledge AWS CLI SSO cleanup.</label>${toolbar(button("Activate roles", "enter", "primary"))}` : ""}</div>`;
       }
       function reviewHTML() {
         const r = state.review;
         let title = "Review / " + views[state.view],
           body = "",
           controls = "";
-        if (r.kind === "connection") {
+        if (r.kind === "new-database") {
+          title = "New database connection";
+          body =
+            "<p>Choose the database type:</p>" +
+            [
+              ["RDS PostgreSQL (or any TCP tunnel)", "p"],
+              ["Amazon DocumentDB", "d"],
+            ]
+              .map(
+                ([label, key], i) =>
+                  `<p>${r.choice === i ? "&gt; " : ""}${button(label, key, r.choice === i ? "primary" : "")}</p>`,
+              )
+              .join("") +
+            '<p class="notice">Each database type has its own form and defaults.</p>';
+          controls = button("RDS PostgreSQL", "p") + button("DocumentDB", "d");
+        } else if (r.kind === "connection") {
           title = r.details ? "Connection details" : "Review connection";
           body =
             section("CONNECTION", connectionRows(r.connection)) +
@@ -2686,6 +2773,8 @@
           return "Tab/↑/↓: fields | Ctrl+S: save edit | Enter: next/review | Ctrl+U: clear | Esc: cancel";
         if (state.picker)
           return "↑/↓: roles | Space: select | Enter: review | Esc: cancel";
+        if (state.review?.kind === "new-database")
+          return "↑/↓: type | Enter: choose | p: PostgreSQL | d: DocumentDB | Esc: cancel";
         if (state.review)
           return "Enter: confirm / connect | Esc: back | PgUp/PgDn: scroll";
         if (state.focus === "accounts")

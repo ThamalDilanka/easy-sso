@@ -97,6 +97,17 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch r.kind {
+	case "new-database":
+		switch key {
+		case "up", "k", "down", "j":
+			r.choice = (r.choice + 1) % len(databaseEngines)
+		case "p":
+			m.newDatabaseForm(engPostgres)
+		case "d":
+			m.newDatabaseForm(engDocumentDB)
+		case "enter":
+			m.newDatabaseForm(databaseEngines[r.choice])
+		}
 	case "connection":
 		if cmd, ok := m.copyDocumentDBKey(key); ok {
 			return cmd
@@ -116,7 +127,7 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if key == "p" && r.connection.Kind == "db" {
-			m.form = &form{kind: "port", fields: []field{{"Local port", strconv.Itoa(r.connection.LocalPort)}}}
+			m.form = &form{kind: "port", fields: []field{{label: "Local port", value: strconv.Itoa(r.connection.LocalPort), id: "localPort"}}}
 			return nil
 		}
 		if key == "f" && r.duplicate {

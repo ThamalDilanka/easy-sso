@@ -221,7 +221,7 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		m.startActivation()
 	case "y":
 		if p, ok := m.profile(); ok {
-			m.form = &form{kind: "alias", fields: []field{{"Account label", m.accountAlias(p.AccountID)}}}
+			m.form = &form{kind: "alias", fields: []field{{label: "Account label", value: m.accountAlias(p.AccountID), id: "label"}}}
 		}
 	case "u":
 		if m.screen == credentials && m.selectedRow >= 0 && m.selectedRow < len(m.roles) {
@@ -282,7 +282,7 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			if key == "i" {
 				kind = "import"
 			}
-			m.form = &form{kind: kind, fields: []field{{"File path", filepath.Join(m.services.Prerequisites.StateDir, "bookmarks-backup.json")}}}
+			m.form = &form{kind: kind, fields: []field{{label: "File path", value: filepath.Join(m.services.Prerequisites.StateDir, "bookmarks-backup.json"), id: "path"}}}
 		}
 	}
 	return nil

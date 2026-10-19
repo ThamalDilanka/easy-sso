@@ -103,6 +103,9 @@ func (m *Model) contextualNotice() string {
 		}
 		return "Enter connection details; review the identity before connecting."
 	}
+	if m.review != nil && m.review.kind == "new-database" {
+		return "Each database type has its own form and defaults."
+	}
 	if m.review != nil {
 		return "Verify account, exact role and target before confirming."
 	}

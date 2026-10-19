@@ -10,43 +10,85 @@ import (
 	"strings"
 )
 
+// newForm opens the EC2 form, or on Databases the type picker; a database
+// form is built only once its type is chosen.
 func (m *Model) newForm() {
+	if m.screen == databases {
+		r := &review{kind: "new-database", listScroll: m.scroll}
+		if draft, ok := m.drafts[databases]; ok && draft.engine == engDocumentDB {
+			r.choice = 1
+		}
+		m.review, m.scroll = r, 0
+		return
+	}
 	if draft, ok := m.drafts[m.screen]; ok {
 		draft.fields = append([]field(nil), draft.fields...)
 		m.form = &draft
 		return
 	}
 	p, _ := m.profile()
-	kind := "ec2"
-	fields := []field{{"Display name", ""}, {"Instance ID", ""}, {"Instance region", p.Region}, {"Session document (optional)", ""}}
-	if m.screen == databases {
-		kind = "db"
-		fields = databaseFields(domain.Connection{Region: p.Region, RelayRegion: p.Region, DBPort: 5432, LocalPort: 15432, AuthMode: "postgres-iam"})
-	}
-	m.form = &form{kind: kind, fields: fields}
+	m.form = &form{kind: "ec2", fields: ec2Fields(domain.Connection{Region: p.Region})}
 }
-func (m *Model) editConnection(c domain.Connection) {
-	fields := []field{{"Display name", c.Name}, {"Instance ID", c.InstanceID}, {"Instance region", c.Region}, {"Session document (optional)", c.DocumentName}}
-	if c.Kind == "db" {
-		fields = databaseFields(c)
+
+// newDatabaseForm opens a new database form for engine. A draft of the same
+// engine resumes; a draft of the other engine stays until this form replaces it.
+func (m *Model) newDatabaseForm(engine string) {
+	m.review = nil
+	if draft, ok := m.drafts[databases]; ok && draft.engine == engine {
+		draft.fields = append([]field(nil), draft.fields...)
+		m.form = &draft
+		return
 	}
-	m.form = &form{kind: c.Kind, fields: fields}
+	p, _ := m.profile()
+	c := domain.Connection{Kind: "db", Region: p.Region, RelayRegion: p.Region, DBPort: 5432, LocalPort: 15432, AuthMode: "postgres-iam"}
+	if engine == engDocumentDB {
+		c.DBPort, c.LocalPort, c.AuthMode = 27017, 37017, ""
+	}
+	m.form = &form{kind: "db", engine: engine, fields: databaseFields(engine, c)}
+}
+
+// bookmarkEngine is the form a saved database bookmark edits in. The type of
+// a saved bookmark is fixed, so editing never shows the type picker.
+func bookmarkEngine(c domain.Connection) string {
+	if isDocumentDB(c) || c.DocDBIAM() {
+		return engDocumentDB
+	}
+	return engPostgres
+}
+
+func (m *Model) editConnection(c domain.Connection) {
+	m.form = &form{kind: c.Kind, fields: ec2Fields(c)}
+	if c.Kind == "db" {
+		engine := bookmarkEngine(c)
+		m.form.engine, m.form.fields = engine, databaseFields(engine, c)
+	}
 	if c.ID != "" {
 		m.form.original = &c
 	}
 	m.scroll = 0
 }
 
+// focus moves the cursor to the field with id, if the form has one.
+func (f *form) focus(id string) {
+	for i, field := range f.fields {
+		if field.id == id {
+			f.index = i
+		}
+	}
+}
+
 func (m *Model) setupDatabaseLogin(c domain.Connection) {
-	if isDocumentDB(c) {
-		m.status = "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client."
+	m.editConnection(c)
+	if m.form.engine == engDocumentDB {
+		m.form.set("auth", "docdb-iam")
+		m.form.focus("database")
+		m.status = docdbLoginStatus
 		return
 	}
-	m.editConnection(c)
-	m.form.fields[7].value = "postgres-iam"
-	m.form.index = 8
+	m.form.set("auth", "postgres-iam")
+	m.form.focus("database")
 	if c.Database != "" {
-		m.form.index = 9
+		m.form.focus("dbUser")
 	}
 	m.status = "Enter the database name and database username. Ctrl+S saves login settings; an administrator must configure IAM access first."
 }
@@ -112,7 +154,7 @@ func (m *Model) submitForm() tea.Cmd {
 	f := m.form
 	switch f.kind {
 	case "port":
-		p, e := ValidatePort(strings.TrimSpace(f.fields[0].value))
+		p, e := ValidatePort(f.get("localPort"))
 		if e != nil {
 			m.status = e.Error()
 			return nil
@@ -125,42 +167,18 @@ func (m *Model) submitForm() tea.Cmd {
 			m.status = "Select an available profile first."
 			return nil
 		}
-		v := func(i int) string { return strings.TrimSpace(f.fields[i].value) }
-		c := domain.Connection{Kind: f.kind, Name: v(0), Partition: p.Partition, AccountID: p.AccountID}
+		c := domain.Connection{Kind: f.kind, Name: f.get("name"), Partition: p.Partition, AccountID: p.AccountID}
 		if f.original != nil {
 			c = *f.original
-			c.Name = v(0)
+			c.Name = f.get("name")
 		}
 		if f.kind == "ec2" {
-			c.InstanceID = v(1)
-			c.Region = v(2)
-			c.DocumentName = v(3)
-		} else {
-			c.Endpoint = strings.ToLower(v(1))
-			c.Region = v(2)
-			c.DBPort, _ = strconv.Atoi(v(3))
-			c.RelayInstanceID = v(4)
-			c.RelayRegion = v(5)
-			c.LocalPort, _ = strconv.Atoi(v(6))
-			c.DBAccountID = p.AccountID
-			if len(f.fields) > 7 {
-				c.AuthMode, c.Database, c.DBUser, c.CAFile = v(7), v(8), v(9), v(10)
-				if c.AuthMode == "tunnel" {
-					c.AuthMode = ""
-				}
-				if c.AuthMode != "" && c.AuthMode != "postgres-iam" {
-					m.status = "Choose postgres-iam or tunnel for authentication."
-					return nil
-				}
-				if err := connections.DocumentDBMode(c); err != nil {
-					m.status = err.Error()
-					return nil
-				}
-				if c.IAMDatabase() && (c.Database == "" || c.DBUser == "") {
-					m.status = "PostgreSQL IAM login requires a database name and database username."
-					return nil
-				}
-			}
+			c.InstanceID = f.get("instance")
+			c.Region = f.get("region")
+			c.DocumentName = f.get("document")
+		} else if msg := readDatabaseForm(f, p.AccountID, &c); msg != "" {
+			m.status = msg
+			return nil
 		}
 		if c.Name == "" || c.Region == "" || (c.Kind == "ec2" && c.InstanceID == "") || (c.Kind == "db" && (c.Endpoint == "" || c.RelayInstanceID == "" || c.RelayRegion == "" || c.DBPort < 1 || c.DBPort > 65535 || c.LocalPort < 1024 || c.LocalPort > 65535)) {
 			m.status = "Complete all fields; local ports must be 1024–65535 and DB ports 1–65535."
@@ -184,7 +202,7 @@ func (m *Model) submitForm() tea.Cmd {
 			m.status = "Bookmark service unavailable."
 			return nil
 		}
-		path := strings.TrimSpace(f.fields[0].value)
+		path := f.get("path")
 		if path == "" {
 			m.status = "Enter a file path."
 			return nil
@@ -200,7 +218,7 @@ func (m *Model) submitForm() tea.Cmd {
 		})
 	case "alias":
 		p, _ := m.profile()
-		label := strings.TrimSpace(f.fields[0].value)
+		label := f.get("label")
 		if label == "" {
 			m.status = "Account label cannot be empty."
 			return nil
@@ -223,29 +241,64 @@ func (m *Model) submitForm() tea.Cmd {
 	return nil
 }
 
-// leaveField switches a new database form to DocumentDB defaults once focus
-// leaves a DocumentDB endpoint. Only values still holding a default change.
-func (m *Model) leaveField(old int) {
-	f := m.form
-	if f == nil || f.kind != "db" || f.original != nil || old != 1 || f.index == old || len(f.fields) < 8 || !connections.DocumentDBEndpoint(strings.TrimSpace(f.fields[1].value)) {
-		return
+// docdbLoginStatus is shown when l switches a DocumentDB bookmark to IAM login.
+const docdbLoginStatus = "DocumentDB IAM login: your role ARN is the user. Enter a database or leave it blank. Ctrl+S saves; an administrator must add the role to the cluster first."
+
+// readDatabaseForm copies a database form into c and returns the status text
+// that refuses it, or "". Each form accepts only its own engine's endpoint
+// and login modes; DocumentDBMode stays as the shared defensive check.
+func readDatabaseForm(f *form, accountID string, c *domain.Connection) string {
+	c.Endpoint = strings.ToLower(f.get("endpoint"))
+	c.Region = f.get("region")
+	c.DBPort, _ = strconv.Atoi(f.get("dbPort"))
+	c.RelayInstanceID = f.get("relay")
+	c.RelayRegion = f.get("relayRegion")
+	c.LocalPort, _ = strconv.Atoi(f.get("localPort"))
+	c.DBAccountID = accountID
+	c.AuthMode, c.Database, c.CAFile = f.get("auth"), f.get("database"), f.get("ca")
+	if c.AuthMode == "tunnel" {
+		c.AuthMode = ""
 	}
-	var changed []string
-	for _, d := range []struct {
-		index          int
-		from, to, name string
-	}{{3, "5432", "27017", "DB port 27017"}, {6, "15432", "37017", "local port 37017"}, {7, "postgres-iam", "tunnel", "auth to tunnel"}} {
-		if strings.TrimSpace(f.fields[d.index].value) == d.from {
-			f.fields[d.index].value = d.to
-			changed = append(changed, d.name)
+	if f.engine == engDocumentDB {
+		if !connections.DocumentDBEndpoint(c.Endpoint) {
+			return "Enter a DocumentDB cluster endpoint (.docdb.amazonaws.com). For other databases choose RDS PostgreSQL."
+		}
+		if c.AuthMode != "" && c.AuthMode != "docdb-iam" {
+			return "Choose tunnel or docdb-iam for authentication."
+		}
+		// The form has no username field. A tunnel edit keeps a legacy
+		// bookmark's username; IAM login uses the role ARN instead.
+		if c.DocDBIAM() {
+			c.DBUser = ""
+		}
+	} else {
+		if connections.DocumentDBEndpoint(c.Endpoint) {
+			return "This is a DocumentDB endpoint. Press Esc, then n, and choose DocumentDB."
+		}
+		c.DBUser = f.get("dbUser")
+		if c.AuthMode != "" && c.AuthMode != "postgres-iam" {
+			return "Choose postgres-iam or tunnel for authentication."
+		}
+		if c.IAMDatabase() && (c.Database == "" || c.DBUser == "") {
+			return "PostgreSQL IAM login requires a database name and database username."
 		}
 	}
-	switch len(changed) {
-	case 0:
-	case 3:
-		m.status = "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel"
-	default:
-		m.status = "DocumentDB endpoint: set " + strings.Join(changed, ", ")
+	if err := connections.DocumentDBMode(*c); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// leaveField runs whenever focus leaves a field, by key or by click. On a
+// new PostgreSQL form it points a DocumentDB endpoint to the DocumentDB form;
+// it never changes a value.
+func (m *Model) leaveField(old int) {
+	f := m.form
+	if f == nil || f.kind != "db" || f.engine != engPostgres || f.original != nil || f.index == old || old >= len(f.fields) || f.fields[old].id != "endpoint" {
+		return
+	}
+	if connections.DocumentDBEndpoint(f.get("endpoint")) {
+		m.status = "DocumentDB endpoint: press Esc and choose DocumentDB for its defaults."
 	}
 }
 
@@ -258,10 +311,61 @@ func ValidatePort(value string) (int, error) {
 	return p, nil
 }
 
-func databaseFields(c domain.Connection) []field {
+// databaseFields builds the form for engine. Both engines share the first
+// seven fields in the same order; only the login fields after them differ.
+func databaseFields(engine string, c domain.Connection) []field {
 	mode := c.AuthMode
 	if mode == "" {
 		mode = "tunnel"
 	}
-	return []field{{"Display name", c.Name}, {"Endpoint (host)", c.Endpoint}, {"DB region", c.Region}, {"DB port", strconv.Itoa(c.DBPort)}, {"Relay EC2 ID", c.RelayInstanceID}, {"Relay / SSM region", c.RelayRegion}, {"Local port", strconv.Itoa(c.LocalPort)}, {"Auth (postgres-iam / tunnel)", mode}, {"Database name (IAM)", c.Database}, {"Database username (IAM)", c.DBUser}, {"RDS CA file (blank: automatic)", c.CAFile}}
+	endpoint := "Endpoint (host)"
+	if engine == engDocumentDB {
+		endpoint = "Cluster endpoint (host)"
+	}
+	fields := []field{
+		{label: "Display name", value: c.Name, id: "name"},
+		{label: endpoint, value: c.Endpoint, id: "endpoint"},
+		{label: "DB region", value: c.Region, id: "region"},
+		{label: "DB port", value: strconv.Itoa(c.DBPort), id: "dbPort"},
+		{label: "Relay EC2 ID", value: c.RelayInstanceID, id: "relay"},
+		{label: "Relay / SSM region", value: c.RelayRegion, id: "relayRegion"},
+		{label: "Local port", value: strconv.Itoa(c.LocalPort), id: "localPort"},
+	}
+	if engine == engDocumentDB {
+		return append(fields,
+			field{label: "Auth (tunnel / docdb-iam)", value: mode, id: "auth"},
+			field{label: "Database (optional, IAM)", value: c.Database, id: "database"},
+			field{label: "CA file (blank: automatic)", value: c.CAFile, id: "ca"},
+		)
+	}
+	return append(fields,
+		field{label: "Auth (postgres-iam / tunnel)", value: mode, id: "auth"},
+		field{label: "Database name (IAM)", value: c.Database, id: "database"},
+		field{label: "Database username (IAM)", value: c.DBUser, id: "dbUser"},
+		field{label: "RDS CA file (blank: automatic)", value: c.CAFile, id: "ca"},
+	)
+}
+
+func ec2Fields(c domain.Connection) []field {
+	return []field{
+		{label: "Display name", value: c.Name, id: "name"},
+		{label: "Instance ID", value: c.InstanceID, id: "instance"},
+		{label: "Instance region", value: c.Region, id: "region"},
+		{label: "Session document (optional)", value: c.DocumentName, id: "document"},
+	}
+}
+
+// formTitle names a form: database forms by engine, others by kind.
+func formTitle(f *form) string {
+	if f.kind != "db" || f.engine == "" {
+		return "Edit " + f.kind
+	}
+	engine := "RDS PostgreSQL"
+	if f.engine == engDocumentDB {
+		engine = "DocumentDB"
+	}
+	if f.original != nil {
+		return "Edit " + engine + " connection"
+	}
+	return "New " + engine + " connection"
 }

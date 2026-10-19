@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -248,6 +247,8 @@ func (m *Model) footer() string {
 			return "r: renew | d: remove | u: unpublish/republish | c: copy profile | PgUp/PgDn: scroll | Esc: back"
 		case "connection":
 			return "Enter: connect | e: edit | PgUp/PgDn: scroll | Esc: back"
+		case "new-database":
+			return "↑/↓: type | Enter: choose | p: PostgreSQL | d: DocumentDB | Esc: cancel"
 		}
 		return "Enter: confirm | Esc: cancel | ?: help"
 	}
@@ -318,14 +319,14 @@ func (m *Model) content() string {
 		if m.review != nil && m.form.kind == "activation" {
 			lines = append(lines, m.reviewContent()...)
 		}
-		lines = append(lines, "Edit "+m.form.kind)
+		lines = append(lines, formTitle(m.form))
 		for i, f := range m.form.fields {
 			lines = append(lines, m.clickable(m.row(f.label+": "+f.value, i == m.form.index), mouseAction{kind: "field", index: i}))
 		}
 		if m.form.kind == "db" {
 			lines = append(lines, "")
-			if connections.DocumentDBEndpoint(strings.TrimSpace(m.form.fields[1].value)) {
-				lines = append(lines, "DocumentDB: easy-sso opens the tunnel with SSO only; your DocumentDB user stays in your client.", "Keep Auth on tunnel and leave the IAM database fields blank.")
+			if m.form.engine == engDocumentDB {
+				lines = append(lines, "DocumentDB tunnel: easy-sso opens the tunnel with SSO only; your DocumentDB user stays in your client.", "docdb-iam: log in with your role ARN as the user; the Database field is optional.")
 			} else {
 				lines = append(lines, databaseLoginGuidance()...)
 			}
@@ -383,6 +384,14 @@ func (m *Model) reviewContent() []string {
 	r := m.review
 	var lines []string
 	switch r.kind {
+	case "new-database":
+		lines = append(lines, "Choose the database type:", "")
+		for i, row := range []struct{ label, key string }{
+			{"RDS PostgreSQL (or any TCP tunnel)", "p"},
+			{"Amazon DocumentDB", "d"},
+		} {
+			lines = append(lines, m.clickable(m.row(row.label, r.choice == i), mouseAction{kind: "key", key: row.key}))
+		}
 	case "connection":
 		c := r.connection
 		p, _ := m.profile()

@@ -167,7 +167,7 @@ func TestUnrelatedPublishedProfilePreservesApprovalAndOpenResult(t *testing.T) {
 	updated = append(updated, domain.Profile{Name: "tui-one", Region: original.Region, Error: "unsupported provider"})
 	f.m.services.LoadProfiles = func() ([]domain.Profile, error) { return updated, nil }
 	f.m.review = &review{kind: "connection"}
-	f.m.drafts[ec2] = form{kind: "ec2", fields: []field{{"Name", "Keep draft"}}}
+	f.m.drafts[ec2] = form{kind: "ec2", fields: []field{{label: "Name", value: "Keep draft", id: "name"}}}
 	epoch := f.m.epoch
 	refresh := f.m.refreshProfiles()
 	operation := f.m.operation("Open connection", func(context.Context) (domain.Run, domain.ImportPlan, error) {

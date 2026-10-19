@@ -110,7 +110,7 @@ func (m *Model) renewRole(role domain.ManagedRole) {
 			return
 		}
 		m.review = &review{kind: "activation", selections: []domain.Selection{{Profile: p, Alias: role.Alias}}}
-		m.form = &form{kind: "activation", fields: []field{{"Published alias for " + p.Name, role.Alias}}}
+		m.form = &form{kind: "activation", fields: []field{{label: "Published alias for " + p.Name, value: role.Alias, id: "alias"}}}
 		return
 	}
 	m.status = "Renewal blocked: the source profile is no longer configured. Existing runs retain their identities."

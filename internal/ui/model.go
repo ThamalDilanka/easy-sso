@@ -30,16 +30,54 @@ const (
 
 var screenNames = []string{"EC2", "Databases", "Sessions", "Tunnels", "Credentials", "Backup"}
 
-type field struct{ label, value string }
+// field is one form row. id names the value it holds, so code reads a form
+// by meaning and two forms may order or omit fields differently.
+type field struct{ label, value, id string }
 type form struct {
 	original *domain.Connection
 	kind     string
-	fields   []field
-	index    int
+	// engine is engPostgres or engDocumentDB on a database form.
+	engine string
+	fields []field
+	index  int
 }
+
+// Database engines a new database form is built for. The engine is never
+// stored: a saved bookmark's engine follows from its endpoint and login mode.
+const (
+	engPostgres   = "postgres"
+	engDocumentDB = "documentdb"
+)
+
+// databaseEngines is the order of the rows in the database type picker.
+var databaseEngines = []string{engPostgres, engDocumentDB}
+
+// get returns the trimmed value of the field with id, or "" if the form has
+// no such field.
+func (f *form) get(id string) string {
+	for _, field := range f.fields {
+		if field.id == id {
+			return strings.TrimSpace(field.value)
+		}
+	}
+	return ""
+}
+
+// set replaces the value of the field with id; a missing id changes nothing.
+func (f *form) set(id, value string) {
+	for i := range f.fields {
+		if f.fields[i].id == id {
+			f.fields[i].value = value
+		}
+	}
+}
+
 type review struct {
-	listScroll                       int
-	details                          bool
+	listScroll int
+	details    bool
+	// choice is the highlighted row of a list review such as the database
+	// type picker.
+	choice                           int
 	kind                             string
 	connection                       domain.Connection
 	run                              domain.Run

@@ -202,6 +202,8 @@ func (m *Model) controls() []control {
 	}
 	if m.review != nil {
 		switch m.review.kind {
+		case "new-database":
+			return []control{{"RDS PostgreSQL", "p"}, {"DocumentDB", "d"}, {"Cancel", "esc"}}
 		case "connection":
 			label := "Connect terminal"
 			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() {

@@ -202,20 +202,34 @@ const { chromium } = require(
     await has(status, "Tunnel not open; Enter on the bookmark reopens it.");
     await key("Escape");
 
-    // A new DocumentDB endpoint switches fields still at their defaults.
+    // A new database connection asks for its type first; each type has its
+    // own form and defaults.
     await nav(1);
     await action("n");
+    await has(pane, "New database connection");
+    assert.equal(await pane.locator('[data-key="p"]').count() > 0, true);
+    assert.equal(await pane.locator('[data-key="d"]').count() > 0, true);
+    await action("d");
+    await has(pane, "New DocumentDB connection");
+    assert.equal(await field(3).inputValue(), "27017");
+    assert.equal(await field(6).inputValue(), "37017");
+    assert.equal(await field(7).inputValue(), "tunnel");
+    await has(pane, "Cluster endpoint (host)");
+    assert.equal((await pane.innerText()).includes("username"), false);
+    await field(7).press("Escape");
+    // The PostgreSQL form keeps its defaults and only hints at DocumentDB.
+    await action("n");
+    await action("p");
     await field(1).fill(
       "example-new.cluster-c0example.us-east-1.docdb.amazonaws.com",
     );
     await field(1).press("Tab");
     await has(
       status,
-      "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel",
+      "DocumentDB endpoint: press Esc and choose DocumentDB for its defaults.",
     );
-    assert.equal(await field(3).inputValue(), "27017");
-    assert.equal(await field(6).inputValue(), "37017");
-    assert.equal(await field(7).inputValue(), "tunnel");
+    assert.equal(await field(3).inputValue(), "5432");
+    assert.equal(await field(7).inputValue(), "postgres-iam");
     await field(7).press("Escape");
 
     // Multi-role activation requires acknowledgement; renew retains alias.

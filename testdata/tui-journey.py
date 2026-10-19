@@ -30,7 +30,7 @@ try:
     config.write_text(original_config)
     send('\x12');wait('Role: ReadOnlyAccess')
     send('\x01');wait('AWS CLI SSO cleanup complete')
-    send('2');send('n');send('app-db\r');send('db.example.rds.amazonaws.com\r');send('\x15eu-west-1\r');send('\r');send('i-0123456789abcdef0\r');send('\r')
+    send('2');send('n');send('p');send('app-db\r');send('db.example.rds.amazonaws.com\r');send('\x15eu-west-1\r');send('\r');send('i-0123456789abcdef0\r');send('\r')
     probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
     send('\x15'+str(port)+'\r');send('\x15tunnel\r');send('\r');send('\r');send('\r');wait('Review connection');send('\r');wait('Tunnel open')
     bookmarks=json.loads((state/'connections.json').read_text());assert len(bookmarks['connections'])==1

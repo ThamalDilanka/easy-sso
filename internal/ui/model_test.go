@@ -406,6 +406,7 @@ func TestDatabaseRegionsPortReviewAndNormalExit(t *testing.T) {
 	activateOne(t, f)
 	key(f.m, "2")
 	key(f.m, "n")
+	key(f.m, "p")
 	fill(f.m, "app-db", "DB.EXAMPLE.RDS.AMAZONAWS.COM", "eu-west-1", "5432", "i-0123456789abcdef0", "us-east-1", "15432", "tunnel", "", "", "")
 	v := f.m.View()
 	for _, want := range []string{"DB region", "eu-west-1", "SSM region", "us-east-1", "unverified ownership", "localhost:15432"} {
@@ -724,6 +725,7 @@ func TestResizeHeightsScrollingAndModalHelp(t *testing.T) {
 	f := setupUI(t)
 	key(f.m, "2")
 	key(f.m, "n")
+	key(f.m, "p")
 	fill(f.m, "db", "db.example", "eu-west-1", "5432", "i-0123456789abcdef0", "us-east-1", "15432", "tunnel", "", "", "")
 	for _, width := range []int{80, 100, 140} {
 		f.m.width = width
