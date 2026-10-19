@@ -169,7 +169,7 @@ func (m *Model) connectSelected() tea.Cmd {
 		if m.services.Terminals != nil && !m.services.Terminals.Has(r.ID) {
 			continue
 		}
-		if activeRun(r) && r.Connection.Kind == "ec2" && r.Connection.InstanceID == c.InstanceID && r.Connection.Region == c.Region && sameProfile(r.Profile, p) {
+		if activeRun(r) && r.Connection.Kind == "ec2" && r.Connection.InstanceID == c.InstanceID && r.Connection.Region == c.Region && r.Connection.DocumentName == c.DocumentName && sameProfile(r.Profile, p) {
 			return m.focusRun(r)
 		}
 	}

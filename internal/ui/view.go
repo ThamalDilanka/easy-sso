@@ -416,7 +416,7 @@ func (m *Model) reviewContent() []string {
 			lines = append(lines, "+ "+importSummary(c))
 		}
 		for _, c := range r.plan.Conflicts {
-			lines = append(lines, "Conflict: "+importSummary(c))
+			lines = append(lines, "Conflict: "+conflictSummary(c, r.plan.Existing))
 		}
 		unbound := append([]string(nil), r.plan.Unbound...)
 		sort.Strings(unbound)
@@ -442,6 +442,17 @@ func importSummary(c domain.Connection) string {
 		line += " | document " + c.DocumentName
 	}
 	return line
+}
+
+// conflictSummary shows when replacing a local bookmark with the same ID would
+// change its session document, including removing it.
+func conflictSummary(c domain.Connection, existing []domain.Connection) string {
+	for _, local := range existing {
+		if local.ID == c.ID && local.Kind == "ec2" && local.DocumentName != c.DocumentName {
+			return c.Name + " | " + c.AccountID + " | " + c.Region + " | document " + documentLabel(local) + " -> " + documentLabel(c)
+		}
+	}
+	return importSummary(c)
 }
 func wrapLines(lines []string, width int) []string {
 	width = max(1, width)

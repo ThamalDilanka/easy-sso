@@ -57,3 +57,39 @@ func TestImportPreviewShowsSessionDocument(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenShellWithAnotherDocumentIsNotReused(t *testing.T) {
+	f := setupUI(t)
+	activateOne(t, f)
+	p, _ := f.m.profile()
+	plain := domain.Connection{ID: "plain", Kind: "ec2", Name: "plain", Partition: "aws", AccountID: p.AccountID, Region: "us-east-1", InstanceID: "i-0123456789abcdef0"}
+	custom := plain
+	custom.ID, custom.Name, custom.DocumentName = "custom", "custom", "Example-ShellDocument"
+	f.m.runs = []domain.Run{{ID: "run-plain", Connection: plain, Profile: p, State: "Connected"}}
+	f.m.connectionReview(custom)
+	if f.m.review.duplicate {
+		t.Fatal("review offered a shell that runs another session document")
+	}
+	f.m.review = nil
+	f.m.connections = []domain.Connection{custom}
+	f.m.screen, f.m.selectedRow = ec2, 0
+	finish(f.m, f.m.connectSelected())
+	if len(f.sessions.opened) != 1 || f.sessions.opened[0].DocumentName != "Example-ShellDocument" {
+		t.Fatalf("connect focused a shell with another session document: %+v", f.sessions.opened)
+	}
+}
+
+func TestImportPreviewShowsReplacedSessionDocument(t *testing.T) {
+	f := setupUI(t)
+	local := domain.Connection{ID: "same", Kind: "ec2", Name: "existing", AccountID: "111111111111", Region: "us-east-1", DocumentName: "Example-ShellDocument"}
+	imported := local
+	imported.DocumentName = ""
+	f.conns.plan = domain.ImportPlan{Conflicts: []domain.Connection{imported}, Existing: []domain.Connection{local}}
+	key(f.m, "6")
+	key(f.m, "i")
+	key(f.m, "enter")
+	lines := strings.Join(f.m.reviewContent(), "\n")
+	if !strings.Contains(lines, "Conflict: existing | 111111111111 | us-east-1 | document Example-ShellDocument -> Default (Session Manager preferences)") {
+		t.Fatalf("replacement would silently drop the session document:\n%s", lines)
+	}
+}

@@ -64,7 +64,7 @@ func (m *Model) connectionReview(c domain.Connection) {
 	r := &review{kind: "connection", connection: c, listScroll: m.scroll}
 	m.scroll = 0
 	for _, run := range m.runs {
-		if activeRun(run) && run.Connection.Kind == c.Kind && run.Connection.AccountID == c.AccountID && run.Connection.Region == c.Region && run.Connection.InstanceID == c.InstanceID && sameProfile(run.Profile, p) && c.Kind == "ec2" {
+		if activeRun(run) && run.Connection.Kind == c.Kind && run.Connection.AccountID == c.AccountID && run.Connection.Region == c.Region && run.Connection.InstanceID == c.InstanceID && run.Connection.DocumentName == c.DocumentName && sameProfile(run.Profile, p) && c.Kind == "ec2" {
 			r.duplicate = true
 			r.run = run
 			break
