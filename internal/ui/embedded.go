@@ -191,10 +191,8 @@ func (m *Model) terminalView() string {
 			lines = append(lines, m.paint(padLine("  "+line, m.width), p.orange, p.background, true))
 		}
 	}
-	if ended && m.reconnecting(run) {
-		// Busy like Connect terminal: amber spinner, no second start, Esc cancels.
-		lines = append(lines, m.paint(padLine("  "+m.reconnectingLabel(), m.width), p.orange, p.background, true))
-	} else if ended {
+	// While reconnecting, only the bottom row shows progress.
+	if ended && !m.reconnecting(run) {
 		action := "r / Enter: reconnect with the same credentials | Ctrl+W: close | Ctrl+]: AWS"
 		m.hit(2, len(lines), lipgloss.Width(action), mouseAction{kind: "key", key: "r"})
 		lines = append(lines, m.paint(padLine("  "+action, m.width), p.orange, p.background, false))

@@ -549,6 +549,10 @@ func TestReconnectShowsLoadingUntilItFinishes(t *testing.T) {
 			t.Fatalf("reconnecting tab lacks %q:\n%s", want, view)
 		}
 	}
+	rows := strings.Split(view, "\n")
+	if strings.Count(view, "Reconnecting (") != 1 || !strings.Contains(rows[len(rows)-1], "Reconnecting (") {
+		t.Fatalf("reconnecting indicator should be only in the bottom row:\n%s", view)
+	}
 	if strings.Contains(view, "r / Enter: reconnect") || !strings.Contains(f.m.footer(), "Reconnecting") {
 		t.Fatalf("tab still offers reconnect while one runs:\n%s\nfooter: %s", view, f.m.footer())
 	}
