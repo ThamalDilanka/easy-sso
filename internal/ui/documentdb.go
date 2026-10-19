@@ -96,13 +96,21 @@ func sameDocumentDBRoute(a, b domain.Connection) bool {
 	return a.Kind == b.Kind && a.AccountID == b.AccountID && a.Partition == b.Partition && strings.EqualFold(a.Endpoint, b.Endpoint) && a.DBPort == b.DBPort && a.Region == b.Region && a.RelayInstanceID == b.RelayInstanceID && a.RelayRegion == b.RelayRegion
 }
 
+// openTunnel finds the newest open tunnel on the same route as c.
+func (m *Model) openTunnel(c domain.Connection) (domain.Run, bool) {
+	for i := len(m.runs) - 1; i >= 0; i-- {
+		if r := m.runs[i]; activeTunnel(r) && sameDocumentDBRoute(r.Connection, c) {
+			return r, true
+		}
+	}
+	return domain.Run{}, false
+}
+
 // documentDBPort is the port of an open tunnel on the same route, else the
 // bookmark's own local port.
 func (m *Model) documentDBPort(c domain.Connection) int {
-	for i := len(m.runs) - 1; i >= 0; i-- {
-		if r := m.runs[i]; activeTunnel(r) && sameDocumentDBRoute(r.Connection, c) {
-			return r.Connection.LocalPort
-		}
+	if r, ok := m.openTunnel(c); ok {
+		return r.Connection.LocalPort
 	}
 	return c.LocalPort
 }
@@ -145,9 +153,10 @@ func (m *Model) receiveCA(x caMsg) tea.Cmd {
 	r.ready, r.inflight, r.stale, r.err = x.err == nil, false, x.stale, ""
 	if x.err != nil {
 		r.err = x.err.Error()
-		// Only the status that announced this tunnel gains the warning.
-		if m.status != "" && m.status == m.caStatus {
-			m.status += " CA bundle unavailable: " + r.err + "; set Databases > Edit (e) > RDS CA file."
+		// Only this bundle's tunnel announcement is rewritten, problem first so
+		// the status bar never cuts it off. A stale bundle still works.
+		if !x.stale && m.status != "" && m.status == m.caStatus && x.path == m.caStatusPath {
+			m.status = fmt.Sprintf("Tunnel open at 127.0.0.1:%d · CA bundle unavailable: %s. Fix: Databases > Edit (e) > RDS CA file.", m.caStatusPort, r.err)
 		}
 	}
 	m.ca[x.path] = r

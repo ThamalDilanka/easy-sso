@@ -35,8 +35,13 @@ func (m *Model) detailsSelected() tea.Cmd {
 	case ec2, databases:
 		ts := m.targets()
 		if m.selectedRow >= 0 && m.selectedRow < len(ts) {
-			m.connectionReview(ts[m.selectedRow])
+			c := ts[m.selectedRow]
+			m.connectionReview(c)
 			m.review.details = true
+			// An open tunnel's CA is checked like its run details are.
+			if _, open := m.openTunnel(c); open && isDocumentDB(c) {
+				return m.ensureCA(c)
+			}
 		}
 	case sessions, tunnels:
 		rs := m.visibleRuns()

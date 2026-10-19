@@ -983,3 +983,47 @@ func TestHelpListsDocumentDBExport(t *testing.T) {
 		t.Fatalf("help lacks x:\n%s", help)
 	}
 }
+
+func TestDocumentDBCAStatusLeadsWithTheProblem(t *testing.T) {
+	const path = "/test-state/rds-ca-aws.pem"
+	open := func(f fixture) {
+		run := docdbRun(f, 37017)
+		f.sessions.runs = []domain.Run{run}
+		f.m.Update(resultMsg{request: f.m.request, epoch: f.m.epoch, action: "Open connection", run: run})
+	}
+	f := setupUI(t)
+	open(f)
+	f.m.Update(caMsg{path: path, err: errors.New("could not download the AWS RDS CA bundle; check network access or set a local CA file")})
+	if want := "Tunnel open at 127.0.0.1:37017 · CA bundle unavailable: could not download the AWS RDS CA bundle; check network access or set a local CA file. Fix: Databases > Edit (e) > RDS CA file."; f.m.status != want {
+		t.Fatalf("status %q", f.m.status)
+	}
+	// A stale but valid bundle is still usable: the row says so, the status stays.
+	f = setupUI(t)
+	open(f)
+	before := f.m.status
+	f.m.Update(caMsg{path: path, err: errors.New("offline"), stale: true})
+	if f.m.status != before {
+		t.Fatalf("stale status %q", f.m.status)
+	}
+	// Another bundle's failure never lands on this tunnel's status.
+	f.m.Update(caMsg{path: "/elsewhere/custom.pem", err: errors.New("RDS CA file unavailable or invalid")})
+	if f.m.status != before {
+		t.Fatalf("other path status %q", f.m.status)
+	}
+}
+
+func TestDocumentDBBookmarkReviewChecksCAOfOpenTunnel(t *testing.T) {
+	f := setupUI(t)
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{docdbBookmark(f)}
+	f.conns.items = f.m.connections
+	f.sessions.runs = []domain.Run{docdbRun(f, 37018)}
+	finish(f.m, f.m.load())
+	key(f.m, "v")
+	if len(*f.ensured) != 1 {
+		t.Fatalf("CA requests %d", len(*f.ensured))
+	}
+	if content := strings.Join(f.m.reviewContent(), "\n"); !strings.Contains(content, "(cached)") || !strings.Contains(content, "127.0.0.1 / 37018") {
+		t.Fatalf("review of an open tunnel:\n%s", content)
+	}
+}

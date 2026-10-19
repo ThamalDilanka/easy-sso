@@ -127,6 +127,8 @@ type Model struct {
 	// status a failed check may extend; pendingRoute selects a new bookmark.
 	ca           map[string]caResult
 	caStatus     string
+	caStatusPath string
+	caStatusPort int
 	pendingRoute *domain.Connection
 }
 
@@ -445,7 +447,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form = nil
 			if strings.EqualFold(x.run.State, "listening") && isDocumentDB(x.run.Connection) {
 				m.status = fmt.Sprintf("Tunnel open at 127.0.0.1:%d · profile [%s]. Connect DataGrip or any MongoDB client with your DocumentDB user; c copies the URL, v shows steps.", x.run.Connection.LocalPort, x.run.Profile.Name)
-				m.caStatus = m.status
+				m.caStatus, m.caStatusPort = m.status, x.run.Connection.LocalPort
+				m.caStatusPath, _ = m.caPath(x.run.Connection)
 				route := x.run.Connection
 				m.pendingRoute = &route
 				return m, tea.Batch(m.afterOperation(), m.ensureCA(x.run.Connection))
