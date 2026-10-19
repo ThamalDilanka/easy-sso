@@ -242,6 +242,9 @@ func (m *Manager) Save(c domain.Connection) error {
 	if err := Validate(c); err != nil {
 		return err
 	}
+	if err := DocumentDBMode(c); err != nil {
+		return err
+	}
 	c.Endpoint = strings.ToLower(c.Endpoint)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -280,6 +283,9 @@ func (m *Manager) Update(c domain.Connection) error {
 		return errors.New("select a saved bookmark to edit")
 	}
 	if err := Validate(c); err != nil {
+		return err
+	}
+	if err := DocumentDBMode(c); err != nil {
 		return err
 	}
 	c.Endpoint = strings.ToLower(c.Endpoint)
@@ -392,6 +398,17 @@ func (m *Manager) Commit(plan domain.ImportPlan, replace bool) error {
 		return errors.New("bookmarks changed after preview; import again")
 	}
 	// Never trust a caller-modified plan; full merged validation happens before write.
+	incoming := plan.Additions
+	if replace {
+		incoming = append(append([]domain.Connection{}, incoming...), plan.Conflicts...)
+	}
+	// Only records this import writes are checked, so a legacy one on disk
+	// never blocks an unrelated import.
+	for _, c := range incoming {
+		if err = DocumentDBMode(c); err != nil {
+			return fmt.Errorf("%s: %w", c.Name, err)
+		}
+	}
 	cs = append(cs, plan.Additions...)
 	if replace {
 		for _, c := range plan.Conflicts {

@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-sso.local/connections.schema.json",
+  "title": "easy-sso bookmarks v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "connections"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "connections": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
+    }
+  },
+  "$defs": {
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "partition",
+        "accountId",
+        "region"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,100}$"
+        },
+        "kind": {
+          "enum": [
+            "ec2",
+            "db"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "partition": {
+          "enum": [
+            "aws",
+            "aws-cn",
+            "aws-us-gov"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(?:-[a-z]+)+-[0-9]+$"
+        },
+        "instanceId": {
+          "type": "string",
+          "pattern": "^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$"
+        },
+        "documentName": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^(?:[A-Za-z0-9_.-]{3,128}|arn:aws(?:-cn|-us-gov)?:ssm:[a-z]{2}(?:-[a-z]+)+-[0-9]+:[0-9]{12}:document/[A-Za-z0-9_.-]{3,128})$"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "format": "hostname"
+        },
+        "dbPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "localPort": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "relayInstanceId": {
+          "type": "string",
+          "pattern": "^i-(?:[0-9a-f]{8}|[0-9a-f]{17})$"
+        },
+        "relayRegion": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(?:-[a-z]+)+-[0-9]+$"
+        },
+        "dbAccountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$"
+        },
+        "lastUsedProfile": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "lastUsedRole": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "authMode": {
+          "enum": [
+            "tunnel",
+            "postgres-iam"
+          ]
+        },
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "dbUser": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "caFile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ec2"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "instanceId"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "endpoint"
+                  ]
+                },
+                {
+                  "required": [
+                    "dbPort"
+                  ]
+                },
+                {
+                  "required": [
+                    "localPort"
+                  ]
+                },
+                {
+                  "required": [
+                    "relayInstanceId"
+                  ]
+                },
+                {
+                  "required": [
+                    "relayRegion"
+                  ]
+                },
+                {
+                  "required": [
+                    "dbAccountId"
+                  ]
+                },
+                {
+                  "required": [
+                    "authMode"
+                  ]
+                },
+                {
+                  "required": [
+                    "database"
+                  ]
+                },
+                {
+                  "required": [
+                    "dbUser"
+                  ]
+                },
+                {
+                  "required": [
+                    "caFile"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "db"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "endpoint",
+              "dbPort",
+              "localPort",
+              "relayInstanceId",
+              "relayRegion"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "instanceId"
+                  ]
+                },
+                {
+                  "required": [
+                    "documentName"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "authMode"
+            ],
+            "properties": {
+              "authMode": {
+                "const": "postgres-iam"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "database",
+              "dbUser"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
