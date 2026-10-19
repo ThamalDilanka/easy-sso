@@ -145,7 +145,11 @@ func databaseLoginGuidance() []string {
 func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewing bool) []string {
 	fields := [][2]string{{"Name", c.Name}}
 	if c.Kind == "ec2" {
-		fields = append(fields, [2]string{"Instance", c.InstanceID}, [2]string{"Region", c.Region})
+		document := c.DocumentName
+		if document == "" {
+			document = "Default (Session Manager preferences)"
+		}
+		fields = append(fields, [2]string{"Instance", c.InstanceID}, [2]string{"Region", c.Region}, [2]string{"Document", document})
 	} else {
 		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", fmt.Sprintf("localhost:%d", c.LocalPort)})
 		if c.IAMDatabase() {

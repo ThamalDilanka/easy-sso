@@ -17,7 +17,7 @@ func (m *Model) newForm() {
 	}
 	p, _ := m.profile()
 	kind := "ec2"
-	fields := []field{{"Display name", ""}, {"Instance ID", ""}, {"Instance region", p.Region}}
+	fields := []field{{"Display name", ""}, {"Instance ID", ""}, {"Instance region", p.Region}, {"Session document (optional)", ""}}
 	if m.screen == databases {
 		kind = "db"
 		fields = databaseFields(domain.Connection{Region: p.Region, RelayRegion: p.Region, DBPort: 5432, LocalPort: 15432, AuthMode: "postgres-iam"})
@@ -25,7 +25,7 @@ func (m *Model) newForm() {
 	m.form = &form{kind: kind, fields: fields}
 }
 func (m *Model) editConnection(c domain.Connection) {
-	fields := []field{{"Display name", c.Name}, {"Instance ID", c.InstanceID}, {"Instance region", c.Region}}
+	fields := []field{{"Display name", c.Name}, {"Instance ID", c.InstanceID}, {"Instance region", c.Region}, {"Session document (optional)", c.DocumentName}}
 	if c.Kind == "db" {
 		fields = databaseFields(c)
 	}
@@ -124,6 +124,7 @@ func (m *Model) submitForm() tea.Cmd {
 		if f.kind == "ec2" {
 			c.InstanceID = v(1)
 			c.Region = v(2)
+			c.DocumentName = v(3)
 		} else {
 			c.Endpoint = strings.ToLower(v(1))
 			c.Region = v(2)

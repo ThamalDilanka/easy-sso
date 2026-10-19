@@ -46,7 +46,7 @@ func TestEditSavedConnections(t *testing.T) {
 				t.Fatal("cancel changed bookmark")
 			}
 			key(f.m, "e")
-			values := []string{"after", "i-1123456789abcdef0", "ap-south-1"}
+			values := []string{"after", "i-1123456789abcdef0", "ap-south-1", "  Example-ShellDocument  "}
 			if kind == "db" {
 				values = []string{"after", "NEW.example.com", "ap-south-1", "5433", "i-1123456789abcdef0", "ap-south-1", "15433"}
 			}
@@ -61,8 +61,8 @@ func TestEditSavedConnections(t *testing.T) {
 			if kind == "db" && (got[0].Endpoint != "new.example.com" || got[0].DBPort != 5433 || got[0].LocalPort != 15433 || got[0].RelayRegion != "ap-south-1" || got[0].RelayInstanceID != values[4]) {
 				t.Fatal("DB fields not saved")
 			}
-			if kind == "ec2" && got[0].InstanceID != values[1] {
-				t.Fatal("instance not saved")
+			if kind == "ec2" && (got[0].InstanceID != values[1] || got[0].DocumentName != "Example-ShellDocument") {
+				t.Fatalf("instance or session document not saved: %+v", got[0])
 			}
 			if f.m.form != nil || len(f.sessions.runs) > 0 || f.creds.snapshots > 0 {
 				t.Fatal("save connected or left form open")

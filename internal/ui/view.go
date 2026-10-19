@@ -413,10 +413,10 @@ func (m *Model) reviewContent() []string {
 	case "import":
 		lines = append(lines, "Import preview: merge review", fmt.Sprintf("Additions: %d | Conflicts: %d", len(r.plan.Additions), len(r.plan.Conflicts)))
 		for _, c := range r.plan.Additions {
-			lines = append(lines, "+ "+c.Name+" | "+c.AccountID+" | "+c.Region)
+			lines = append(lines, "+ "+importSummary(c))
 		}
 		for _, c := range r.plan.Conflicts {
-			lines = append(lines, "Conflict: "+c.Name+" | "+c.AccountID+" | "+c.Region)
+			lines = append(lines, "Conflict: "+importSummary(c))
 		}
 		unbound := append([]string(nil), r.plan.Unbound...)
 		sort.Strings(unbound)
@@ -432,6 +432,16 @@ func (m *Model) reviewContent() []string {
 		lines = append([]string{"Exit workspace?"}, m.exitWarnings()...)
 	}
 	return lines
+}
+
+// importSummary names a custom session document, so an import cannot quietly
+// change which document a shell runs.
+func importSummary(c domain.Connection) string {
+	line := c.Name + " | " + c.AccountID + " | " + c.Region
+	if c.Kind == "ec2" && c.DocumentName != "" {
+		line += " | document " + c.DocumentName
+	}
+	return line
 }
 func wrapLines(lines []string, width int) []string {
 	width = max(1, width)

@@ -335,7 +335,7 @@ func TestEC2JourneyDuplicateFocusAndTargetedDisconnect(t *testing.T) {
 	f := setupUI(t)
 	activateOne(t, f)
 	key(f.m, "n")
-	fill(f.m, "example-instance", "i-0123456789abcdef0", "us-east-1")
+	fill(f.m, "example-instance", "i-0123456789abcdef0", "us-east-1", "")
 	if f.m.review == nil || len(f.sessions.opened) != 0 {
 		t.Fatal("new target skipped review")
 	}
