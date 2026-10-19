@@ -83,7 +83,7 @@ func shortcutGroups() []shortcutGroup {
 			{"Ctrl+]", "Return to the AWS workspace."},
 			{"Ctrl+W / Alt+W", "Disconnect and close the current shell tab. A failed local cleanup keeps the tab available."},
 			{"Alt+PgUp / PgDn, wheel", "Scroll retained output; any key returns to live output. Inside a full-screen program the gesture goes to the program."},
-			{"r / Enter (ended tab)", "Reconnect with the run's frozen credentials and destination; refused once those credentials expire."},
+			{"r / Enter (ended tab)", "Reconnect with the run's frozen credentials and destination; refused once those credentials expire. Esc cancels while it reconnects."},
 			{"All other keys", "Go to the shell, including Tab, ?, q, and Ctrl+C. Use Ctrl+] first for workspace shortcuts."},
 		}},
 		{"SIGN-IN & RUNNING OPERATIONS", []shortcut{

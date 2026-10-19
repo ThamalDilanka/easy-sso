@@ -531,3 +531,46 @@ func TestEndedDatabaseTabKeepsForwardingKeysWithoutReconnectOffer(t *testing.T) 
 		t.Fatalf("database tab advertises reconnect:\n%s", v)
 	}
 }
+
+func TestReconnectShowsLoadingUntilItFinishes(t *testing.T) {
+	f := setupUI(t)
+	terminals := &testTerminals{frames: map[string]string{"alpha": "write: broken pipe"}, exited: map[string]bool{"alpha": true}}
+	f.m.services.Terminals = terminals
+	run := domain.Run{ID: "alpha", Connection: domain.Connection{Name: "alpha", Kind: "ec2"}, State: "Ended"}
+	f.m.showTerminal(run)
+	f.sessions.reopenErr = context.Canceled
+	pending := press(f.m, "r")
+	if pending == nil {
+		t.Fatal("reconnect did not start")
+	}
+	view := f.m.View()
+	for _, want := range []string{"Session ended", "Reconnecting (", ") elapsed 00:0", "Esc: cancel", "broken pipe"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("reconnecting tab lacks %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "r / Enter: reconnect") || !strings.Contains(f.m.footer(), "Reconnecting") {
+		t.Fatalf("tab still offers reconnect while one runs:\n%s\nfooter: %s", view, f.m.footer())
+	}
+	if press(f.m, "r") != nil || press(f.m, "enter") != nil {
+		t.Fatal("a second reconnect started while one was running")
+	}
+	f.m.View()
+	for _, h := range f.m.hits {
+		if h.action.kind == "key" && h.action.key == "r" {
+			t.Fatal("reconnect line stays clickable while reconnecting")
+		}
+	}
+	key(f.m, "esc")
+	if !strings.Contains(f.m.status, "Cancellation requested") {
+		t.Fatalf("Esc did not cancel the reconnect: %q", f.m.status)
+	}
+	finish(f.m, pending)
+	if len(f.sessions.reopened) != 1 {
+		t.Fatalf("reopened %d times", len(f.sessions.reopened))
+	}
+	view = f.m.View()
+	if strings.Contains(view, "Reconnecting (") || !strings.Contains(view, "r / Enter: reconnect") || f.m.terminalID != "alpha" {
+		t.Fatalf("cancelled reconnect did not return to the ended tab:\n%s", view)
+	}
+}

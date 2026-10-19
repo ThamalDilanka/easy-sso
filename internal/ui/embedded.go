@@ -6,6 +6,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
+	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/charmbracelet/lipgloss"
@@ -68,6 +69,15 @@ func (m *Model) reconnectTerminal() tea.Cmd {
 		r, err := owner.Reopen(ctx, run.ID)
 		return r, domain.ImportPlan{}, err
 	})
+}
+
+// reconnecting reports a reconnect still running for this ended tab.
+func (m *Model) reconnecting(run domain.Run) bool {
+	return m.busy && m.reconnectFrom != "" && m.reconnectFrom == run.ID
+}
+
+func (m *Model) reconnectingLabel() string {
+	return "Reconnecting (" + m.spinnerFrame() + ") elapsed " + clockDuration(time.Since(m.operationStarted)) + " | Esc: cancel | Ctrl+]: AWS"
 }
 
 func (m *Model) replaceTerminalTab(oldID string, r domain.Run) {
@@ -181,14 +191,19 @@ func (m *Model) terminalView() string {
 			lines = append(lines, m.paint(padLine("  "+line, m.width), p.orange, p.background, true))
 		}
 	}
-	if ended {
+	if ended && m.reconnecting(run) {
+		// Busy like Connect terminal: amber spinner, no second start, Esc cancels.
+		lines = append(lines, m.paint(padLine("  "+m.reconnectingLabel(), m.width), p.orange, p.background, true))
+	} else if ended {
 		action := "r / Enter: reconnect with the same credentials | Ctrl+W: close | Ctrl+]: AWS"
 		m.hit(2, len(lines), lipgloss.Width(action), mouseAction{kind: "key", key: "r"})
 		lines = append(lines, m.paint(padLine("  "+action, m.width), p.orange, p.background, false))
 	}
 	lines = append(lines, m.terminalPane(run, m.width, max(1, m.height-len(lines)-1), 0, len(lines))...)
 	hint := "Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history"
-	if ended {
+	if ended && m.reconnecting(run) {
+		hint = m.reconnectingLabel()
+	} else if ended {
 		hint = "r / Enter: reconnect | Ctrl+W: close | Ctrl+]: AWS | Alt+PgUp/PgDn: history"
 	}
 	if offset, history := m.services.Terminals.ScrollPosition(run.ID); offset > 0 {

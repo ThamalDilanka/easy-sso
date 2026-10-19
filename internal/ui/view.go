@@ -212,6 +212,9 @@ func (m *Model) View() string {
 func (m *Model) footer() string {
 	if run, ok := m.embeddedRun(); ok && m.terminalFocus && m.form == nil && m.review == nil && !m.help {
 		if run.Connection.Kind == "ec2" && m.terminalEnded(run) {
+			if m.reconnecting(run) {
+				return "Reconnecting | Esc: cancel | Ctrl+]: AWS workspace"
+			}
 			return "Session ended | r: reconnect | Ctrl+W: close | Ctrl+]: AWS workspace"
 		}
 		return "Terminal focused | Ctrl+]: AWS workspace | All other keys go to the server"

@@ -38,6 +38,13 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			return m.scrollTerminal(lines, false, 0, 0)
 		}
 		if run.Connection.Kind == "ec2" && m.terminalEnded(run) {
+			if m.reconnecting(run) {
+				if key == "esc" && m.cancel != nil {
+					m.cancel()
+					m.status = "Cancellation requested. Waiting for cleanup and final state."
+				}
+				return nil
+			}
 			if !k.Paste && (key == "r" || key == "enter") {
 				return m.reconnectTerminal()
 			}
