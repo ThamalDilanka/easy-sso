@@ -3,6 +3,8 @@ package database
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"os/exec"
@@ -123,13 +125,24 @@ func resolveWindowsHome(ctx context.Context) (string, string, error) {
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
+var cacheName = regexp.MustCompile(`^rds-ca-[a-z-]+\.pem$`)
+
+// exportName keeps the app's own bundle names; a user's file gains a short
+// hash of its path so two same-named files never share one export.
 func exportName(src string) string {
 	name := unsafeName.ReplaceAllString(filepath.Base(src), "_")
-	lower := strings.ToLower(name)
-	if !strings.HasSuffix(lower, ".pem") && !strings.HasSuffix(lower, ".crt") && !strings.HasSuffix(lower, ".cer") {
-		name += ".pem"
+	if cacheName.MatchString(name) {
+		return name
 	}
-	return name
+	abs, _ := filepath.Abs(src)
+	sum := sha256.Sum256([]byte(abs))
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == ".pem" || ext == ".crt" || ext == ".cer" {
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+	} else {
+		ext = ".pem"
+	}
+	return name + "-" + hex.EncodeToString(sum[:4]) + ext
 }
 
 // ExportCAToWindows copies a public CA bundle to %USERPROFILE%\.easy-sso so
@@ -137,7 +150,7 @@ func exportName(src string) string {
 // export, and reports Exists false when there is none.
 func ExportCAToWindows(ctx context.Context, src string, refreshOnly bool) (domain.CAExport, error) {
 	var exp domain.CAExport
-	data, err := store.Read(src, 1024*1024)
+	data, err := readCA(src)
 	if err != nil || !validCA(data) {
 		return exp, errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
 	}

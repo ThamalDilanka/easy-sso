@@ -184,6 +184,24 @@ func (o *Output) Failure() string {
 // CachedCA reports whether path holds a valid CA bundle, whatever its age.
 // It only labels a still-usable file; EnsureCA never falls back to it.
 func CachedCA(path string) bool {
-	data, err := store.Read(path, 1024*1024)
+	data, err := readCA(path)
 	return err == nil && validCA(data)
+}
+
+// readCA reads public CA content the way EnsureCA accepts it: links in the
+// path are fine, but only a regular file up to 1 MiB is read.
+func readCA(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if st, e := f.Stat(); e != nil || !st.Mode().IsRegular() {
+		return nil, errors.New("CA file must be a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 1024*1024+1))
+	if err == nil && len(data) > 1024*1024 {
+		err = errors.New("CA file exceeds 1 MiB")
+	}
+	return data, err
 }

@@ -35,7 +35,11 @@ type caMsg struct {
 type caResult struct {
 	ready, inflight, stale bool
 	exporting, probed      bool
-	err, win, winErr       string
+	// quietRun marks an in-flight background export; queued is an explicit
+	// x pressed meanwhile, run as soon as that export lands.
+	quietRun         bool
+	queued           *domain.Connection
+	err, win, winErr string
 }
 
 // caExportMsg reports an x export, or a quiet refresh of an earlier one.
@@ -185,9 +189,10 @@ func (m *Model) refreshExport(path string) tea.Cmd {
 	return m.exportCA(domain.Connection{}, path, true)
 }
 
-func (m *Model) receiveExport(x caExportMsg) {
+func (m *Model) receiveExport(x caExportMsg) tea.Cmd {
 	r := m.ca[x.path]
-	r.exporting, r.probed = false, true
+	queued := r.queued
+	r.exporting, r.probed, r.quietRun, r.queued = false, true, false, nil
 	if x.err == nil && x.exp.Exists {
 		r.win, r.winErr = x.exp.Windows, ""
 	} else if x.err != nil && x.quiet && r.win != "" {
@@ -197,6 +202,10 @@ func (m *Model) receiveExport(x caExportMsg) {
 	if !x.quiet {
 		m.status = x.feedback
 	}
+	if queued != nil {
+		return m.exportCA(*queued, x.path, false)
+	}
+	return nil
 }
 
 func (m *Model) exporter() func(context.Context, string, bool) (domain.CAExport, error) {
@@ -248,9 +257,15 @@ func (m *Model) exportCAKey(key string) (tea.Cmd, bool) {
 func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
 	r := m.ca[path]
 	if r.exporting {
+		// An explicit x waits for a background export instead of vanishing.
+		if !quiet && r.quietRun {
+			r.queued = &c
+			m.ca[path] = r
+			m.status = "Copying the CA file to Windows..."
+		}
 		return nil
 	}
-	r.exporting = true
+	r.exporting, r.quietRun = true, quiet
 	m.ca[path] = r
 	if !quiet {
 		m.status = "Copying the CA file to Windows..."
@@ -265,7 +280,7 @@ func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
 					msg.feedback = "CA bundle unavailable: " + err.Error() + "; nothing copied. Set Databases > Edit (e) > RDS CA file."
 					return msg
 				}
-				stale = " CA refresh failed: " + err.Error() + "; copied the cached bundle."
+				stale = "CA refresh failed; copied the cached bundle. "
 			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -284,7 +299,7 @@ func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
 		copied := copy(ctx, win) == nil
 		switch {
 		case msg.exp.Changed && copied:
-			msg.feedback = "Copied the CA file to " + win + " and its path to the clipboard. DataGrip: SSH/SSL > CA file, paste, Mode Verify CA."
+			msg.feedback = "Copied the CA file and its path: " + win + ". Paste it into DataGrip SSH/SSL > CA file."
 		case msg.exp.Changed:
 			msg.feedback = "Copied the CA file to " + win + ". Could not copy its path; it is in Details (v)."
 		case copied:
@@ -292,7 +307,7 @@ func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
 		default:
 			msg.feedback = "Windows CA file is up to date: " + win + ". Could not copy its path; it is in Details (v)."
 		}
-		msg.feedback += stale
+		msg.feedback = stale + msg.feedback
 		return msg
 	}
 }
@@ -300,7 +315,7 @@ func (m *Model) exportCA(c domain.Connection, path string, quiet bool) tea.Cmd {
 func exportFailure(err error, win, src string) string {
 	switch {
 	case errors.Is(err, database.ErrNoWindowsHome):
-		return "Windows home folder not found (is WSL interop on?). Copy it yourself: cp '" + src + "' /mnt/c/certs/"
+		return "Windows home folder not found (is WSL interop on?). Copy it yourself: mkdir -p /mnt/c/certs && cp '" + src + "' /mnt/c/certs/"
 	case errors.Is(err, store.ErrLink):
 		dir := "the Windows folder"
 		if i := strings.LastIndex(win, `\`); i > 0 {
@@ -447,11 +462,15 @@ func (m *Model) copyDocumentDBKey(key string) (tea.Cmd, bool) {
 	return m.copyDocumentDB(c, port, key == "C"), true
 }
 
-func copyFailure() string {
+func copyFailure(generic bool) string {
+	text := "Could not copy. "
 	if goos == "linux" && getenv("WSL_DISTRO_NAME") == "" {
-		return "Could not copy (install xclip or wl-clipboard on Linux). The URL is in Details (v)."
+		text = "Could not copy (install xclip or wl-clipboard on Linux). "
 	}
-	return "Could not copy. The URL is in Details (v)."
+	if generic {
+		return text + "For other clients add tls=true&tlsCAFile=<CA file row> to the URL in Details (v)."
+	}
+	return text + "The URL is in Details (v)."
 }
 
 // copyDocumentDB copies connection strings only; never a user or password.
@@ -468,19 +487,20 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 		if elastic {
 			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL turn on Use SSL with no CA file; enter your DocumentDB user in DataGrip.", port)
 		} else if path, err := m.caPath(c); err == nil && wsl() {
-			switch win := wslPath(path); {
+			// Under WSL the Windows CA path comes first so the status bar keeps it.
+			ca := wslPath(path)
+			switch {
 			case m.ca[path].win != "":
-				feedback += " CA file: " + m.ca[path].win + "."
-			case strings.HasPrefix(win, `\\`):
-				feedback += " CA file: use the CA file Windows row (x copies it to Windows)."
-			default:
-				feedback += " CA file: " + win + "."
+				ca = m.ca[path].win
+			case strings.HasPrefix(ca, `\\`):
+				ca = "press x to copy it to Windows"
 			}
+			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. CA file: %s · Mode Verify CA · log in with your DocumentDB user.", port, ca)
 		}
 		url := dataGripURL(port)
 		return func() tea.Msg {
 			if !write(url) {
-				return clipboardMsg{copyFailure()}
+				return clipboardMsg{copyFailure(false)}
 			}
 			return clipboardMsg{feedback}
 		}
@@ -498,25 +518,30 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 	return func() tea.Msg {
 		if elastic {
 			if !write(clientURI(port, "", true)) {
-				return clipboardMsg{copyFailure()}
+				return clipboardMsg{copyFailure(true)}
 			}
 			return clipboardMsg{"Copied client URI (elastic clusters need no tlsCAFile). In a shell, wrap it in single quotes."}
 		}
 		if pathErr != nil {
 			if !write(clientURI(port, "", false)) {
-				return clipboardMsg{copyFailure()}
+				return clipboardMsg{copyFailure(true)}
 			}
 			return clipboardMsg{"Copied without tlsCAFile; set RDS CA file for aws-cn."}
 		}
 		_, err := ensure(context.Background(), c)
 		msg := caCopyMsg{path: path, err: err, stale: err != nil && database.CachedCA(path)}
 		if !write(clientURI(port, ca, false)) {
-			msg.feedback = copyFailure()
+			msg.feedback = copyFailure(true)
 			return msg
 		}
-		msg.feedback = "Copied client URI with tlsCAFile " + ca + ". In a shell, wrap it in single quotes."
-		if err != nil {
-			msg.feedback += " CA bundle unavailable: " + err.Error() + "."
+		// A CA problem leads, so the two-line status bar never hides it.
+		switch {
+		case err != nil && msg.stale:
+			msg.feedback = "CA refresh failed; the cached bundle still works. Copied client URI with tlsCAFile " + ca + "."
+		case err != nil:
+			msg.feedback = "CA bundle unavailable: " + err.Error() + ". Copied the URI anyway; its tlsCAFile " + ca + " may not exist yet. Fix: Databases > Edit (e) > RDS CA file."
+		default:
+			msg.feedback = "Copied client URI with tlsCAFile " + ca + ". In a shell, wrap it in single quotes."
 		}
 		return msg
 	}

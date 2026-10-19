@@ -619,10 +619,10 @@ func TestDocumentDBCopyFailureNamesDetails(t *testing.T) {
 	f.m.services.CopyText = func(string) error { return errors.New("no clipboard") }
 	f.m.screen = databases
 	f.m.connections = []domain.Connection{docdbBookmark(f)}
-	for _, k := range []string{"c", "C"} {
+	for k, want := range map[string]string{"c": "The URL is in Details (v).", "C": "add tls=true&tlsCAFile=<CA file row> to the URL in Details (v)"} {
 		f.m.status = ""
 		key(f.m, k)
-		if !strings.Contains(f.m.status, "Could not copy") || !strings.Contains(f.m.status, "Details (v)") || strings.Contains(f.m.status, "Copied") {
+		if !strings.Contains(f.m.status, "Could not copy") || !strings.Contains(f.m.status, want) || strings.Contains(f.m.status, "Copied") {
 			t.Fatalf("%s failure status %q", k, f.m.status)
 		}
 	}
@@ -638,7 +638,7 @@ func TestDocumentDBCopyCAEdgeCases(t *testing.T) {
 		return "", errors.New("AWS RDS CA bundle download was invalid")
 	}
 	key(f.m, "C")
-	if (*copied)[0] != clientURI(37017, "/test-state/rds-ca-aws.pem", false) || !strings.HasSuffix(f.m.status, " CA bundle unavailable: AWS RDS CA bundle download was invalid.") {
+	if (*copied)[0] != clientURI(37017, "/test-state/rds-ca-aws.pem", false) || f.m.status != "CA bundle unavailable: AWS RDS CA bundle download was invalid. Copied the URI anyway; its tlsCAFile /test-state/rds-ca-aws.pem may not exist yet. Fix: Databases > Edit (e) > RDS CA file." {
 		t.Fatalf("failed CA: copied %q status %q", *copied, f.m.status)
 	}
 	if f.m.ca["/test-state/rds-ca-aws.pem"].err == "" {
@@ -688,7 +688,7 @@ func TestDocumentDBWSLClientURI(t *testing.T) {
 		t.Fatalf("WSL C status %q", f.m.status)
 	}
 	key(f.m, "c")
-	if !strings.HasSuffix(f.m.status, "CA file: use the CA file Windows row (x copies it to Windows).") {
+	if want := "Copied DataGrip URL for 127.0.0.1:37017. CA file: press x to copy it to Windows · Mode Verify CA · log in with your DocumentDB user."; f.m.status != want {
 		t.Fatalf("WSL c status %q", f.m.status)
 	}
 }
@@ -786,7 +786,7 @@ func TestDocumentDBExportCAKey(t *testing.T) {
 		t.Fatalf("start status %q (or a second export started)", f.m.status)
 	}
 	finish(f.m, cmd)
-	if want := "Copied the CA file to " + exportedCA + " and its path to the clipboard. DataGrip: SSH/SSL > CA file, paste, Mode Verify CA."; f.m.status != want {
+	if want := "Copied the CA file and its path: " + exportedCA + ". Paste it into DataGrip SSH/SSL > CA file."; f.m.status != want {
 		t.Fatalf("status %q", f.m.status)
 	}
 	if strings.Join(*f.exports, ",") != "/test-state/rds-ca-aws.pem false" || strings.Join(*copied, ",") != exportedCA || len(*f.ensured) != 1 {
@@ -802,7 +802,7 @@ func TestDocumentDBExportCAKey(t *testing.T) {
 		t.Fatalf("C after export %q", last)
 	}
 	key(f.m, "c")
-	if !strings.HasSuffix(f.m.status, "CA file: "+exportedCA+".") {
+	if want := "Copied DataGrip URL for 127.0.0.1:37017. CA file: " + exportedCA + " · Mode Verify CA · log in with your DocumentDB user."; f.m.status != want {
 		t.Fatalf("c after export %q", f.m.status)
 	}
 	key(f.m, "x")
@@ -836,7 +836,7 @@ func TestDocumentDBExportCAStatuses(t *testing.T) {
 	}{
 		{"unchanged", false, nil, nil, "Windows CA file is up to date: " + exportedCA + ". Path copied to the clipboard."},
 		{"clipboard", true, nil, errors.New("no clipboard"), "Copied the CA file to " + exportedCA + ". Could not copy its path; it is in Details (v)."},
-		{"no home", false, database.ErrNoWindowsHome, nil, "Windows home folder not found (is WSL interop on?). Copy it yourself: cp '/test-state/rds-ca-aws.pem' /mnt/c/certs/"},
+		{"no home", false, database.ErrNoWindowsHome, nil, "Windows home folder not found (is WSL interop on?). Copy it yourself: mkdir -p /mnt/c/certs && cp '/test-state/rds-ca-aws.pem' /mnt/c/certs/"},
 		{"link", false, store.ErrLink, nil, `Refusing to write through a link in D:\winhome\.easy-sso; remove it or copy the file yourself.`},
 		{"foreign", false, database.ErrNotCABundle, nil, exportedCA + " exists and is not a CA bundle; move it away, then press x again."},
 		{"in use", false, store.ErrInUse, nil, "Windows has " + exportedCA + " open; close the DataGrip connection, then press x again."},
@@ -878,7 +878,7 @@ func TestDocumentDBExportCAStatuses(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "rds-ca-aws.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600)
 	f.m.services.Prerequisites.StateDir = dir
 	key(f.m, "x")
-	if !strings.HasSuffix(f.m.status, " CA refresh failed: AWS RDS CA bundle download was invalid; copied the cached bundle.") || len(*f.exports) != 1 {
+	if !strings.HasPrefix(f.m.status, "CA refresh failed; copied the cached bundle. ") || len(*f.exports) != 1 {
 		t.Fatalf("stale: %q exports %q", f.m.status, *f.exports)
 	}
 }
@@ -1054,5 +1054,102 @@ func TestDocumentDBRoutesUse127001(t *testing.T) {
 	f.m.connectionReview(rds)
 	if !strings.Contains(strings.Join(f.m.reviewContent(), "\n"), "localhost:15432") {
 		t.Fatal("RDS route changed")
+	}
+}
+
+// visible is what the two-line status bar shows at width, spaces dropped so
+// a wrapped path still matches.
+func visible(status string, width int) string {
+	side := 0
+	if width >= 120 {
+		side = 33
+	} else if width >= 100 {
+		side = 29
+	}
+	return strings.ReplaceAll(strings.Join(clipStatus(status, width-side-4), ""), " ", "")
+}
+
+func TestDocumentDBStatusesKeepKeyInfoVisible(t *testing.T) {
+	check := func(name, status, want string) {
+		t.Helper()
+		for _, width := range []int{80, 100} {
+			if !strings.Contains(visible(status, width), strings.ReplaceAll(want, " ", "")) {
+				t.Errorf("%s at %d cuts %q from %q", name, width, want, status)
+			}
+		}
+	}
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	recordCopies(f)
+	f.m.connectionReview(docdbBookmark(f))
+	key(f.m, "c")
+	check("c before export", f.m.status, "press x")
+	f.m.ca["/test-state/rds-ca-aws.pem"] = caResult{ready: true, win: `D:\winhome\example-profile-folder\.easy-sso\rds-ca-aws.pem`}
+	key(f.m, "c")
+	check("c after export", f.m.status, `D:\winhome\example-profile-folder\.easy-sso\rds-ca-aws.pem`)
+	f.m.ca = map[string]caResult{}
+	f.m.services.EnsureCA = func(context.Context, domain.Connection) (string, error) {
+		return "", errors.New("could not download the AWS RDS CA bundle; check network access or set a local CA file")
+	}
+	key(f.m, "C")
+	check("C with CA failure", f.m.status, "CA bundle unavailable")
+	exportTo(f, true, nil)
+	f.m.services.EnsureCA = func(context.Context, domain.Connection) (string, error) { return "/test-state/rds-ca-aws.pem", nil }
+	key(f.m, "x")
+	check("x", f.m.status, exportedCA)
+}
+
+func TestDocumentDBExplicitExportWaitsForQuietProbe(t *testing.T) {
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	copied := recordCopies(f)
+	exportTo(f, true, nil)
+	const path = "/test-state/rds-ca-aws.pem"
+	_, probe := f.m.Update(caMsg{path: path})
+	if probe == nil {
+		t.Fatal("no quiet probe")
+	}
+	f.m.connectionReview(docdbBookmark(f))
+	if cmd := press(f.m, "x"); cmd != nil || f.m.status != "Copying the CA file to Windows..." {
+		t.Fatalf("x during probe: cmd %v status %q", cmd != nil, f.m.status)
+	}
+	finish(f.m, probe)
+	if len(*copied) != 1 || !strings.HasPrefix(f.m.status, "Copied the CA file") {
+		t.Fatalf("queued x did not run: copied %q status %q", *copied, f.m.status)
+	}
+}
+
+func TestDocumentDBCopyAdoptsExportAfterC(t *testing.T) {
+	f := setupUI(t)
+	t.Setenv("WSL_DISTRO_NAME", "Example")
+	copied := recordCopies(f)
+	exportTo(f, false, nil)
+	f.m.connectionReview(docdbBookmark(f))
+	key(f.m, "C")
+	key(f.m, "C")
+	// Each successful check refreshes quietly; none is an explicit export.
+	if len(*f.exports) == 0 || strings.Contains(strings.Join(*f.exports, ","), "false") || !strings.HasSuffix((*copied)[1], "tlsCAFile=D%3A%5Cwinhome%5C.easy-sso%5Crds-ca-aws.pem") {
+		t.Fatalf("exports %q copied %q", *f.exports, *copied)
+	}
+}
+
+func TestDocumentDBListeningSelectsOpenedBookmark(t *testing.T) {
+	f := setupUI(t)
+	f.m.screen = databases
+	first, second := docdbBookmark(f), docdbBookmark(f)
+	first.ID, first.Name = "first", "aaa"
+	second.ID, second.Name, second.LocalPort = "second", "bbb", 37018
+	f.conns.items = []domain.Connection{first, second}
+	run := docdbRun(f, 37018)
+	run.Connection = second
+	f.sessions.runs = []domain.Run{run}
+	_, cmd := f.m.Update(resultMsg{request: f.m.request, epoch: f.m.epoch, action: "Open connection", run: run})
+	for _, msg := range collect(cmd) {
+		if _, ok := msg.(caMsg); !ok {
+			f.m.Update(msg)
+		}
+	}
+	if ts := f.m.targets(); ts[f.m.selectedRow].ID != "second" {
+		t.Fatalf("selected %q", ts[f.m.selectedRow].ID)
 	}
 }

@@ -261,8 +261,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case caMsg:
 		return m, m.receiveCA(x)
 	case caExportMsg:
-		m.receiveExport(x)
-		return m, nil
+		return m, m.receiveExport(x)
 	case caCopyMsg:
 		// C runs its own check; an automatic one may still be in flight.
 		r := m.ca[x.path]
@@ -343,11 +342,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingTarget = ""
 		}
 		if m.pendingRoute != nil {
-			// A first open has no bookmark ID yet, so match the route.
+			// Prefer the opened bookmark's ID; a first open has none yet, so
+			// fall back to its route.
+			found := false
 			for i, c := range m.targets() {
-				if sameDocumentDBRoute(c, *m.pendingRoute) {
-					m.selectedRow = i
+				if m.pendingRoute.ID != "" && c.ID == m.pendingRoute.ID {
+					m.selectedRow, found = i, true
 					break
+				}
+			}
+			for i, c := range m.targets() {
+				if !found && sameDocumentDBRoute(c, *m.pendingRoute) {
+					m.selectedRow, found = i, true
 				}
 			}
 			m.pendingRoute = nil

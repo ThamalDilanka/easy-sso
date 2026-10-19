@@ -197,6 +197,10 @@ func setupUI(t *testing.T) fixture {
 	t.Setenv("EASY_SSO_ASCII", "1")
 	// The dev box is WSL: never reach clip.exe or the real clipboard.
 	t.Setenv("WSL_DISTRO_NAME", "")
+	// WSL rendering is Linux-only; pin it so WSL tests run on every host.
+	oldGOOS := goos
+	goos = "linux"
+	t.Cleanup(func() { goos = oldGOOS })
 	profiles := []domain.Profile{{Name: "one", SSOSession: "login", AccountID: "111111111111", Role: "ReadOnlyAccess", Partition: "aws", Region: "us-east-1", DirectSSO: true}, {Name: "two", SSOSession: "login", AccountID: "222222222222", Role: "OrganizationAccountAccessRole", Partition: "aws", Region: "eu-west-1", Chain: []string{"one", "two"}}}
 	c := &fakeCredentials{}
 	b := &fakeConnections{}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -171,8 +172,25 @@ func TestExportCAToWindows(t *testing.T) {
 	}
 	custom := filepath.Join(state, "my ca.txt")
 	_ = os.WriteFile(custom, ca, 0o600)
-	if got, err = ExportCAToWindows(context.Background(), custom, false); err != nil || got.Windows != `D:\winhome\.easy-sso\my_ca.txt.pem` {
+	if got, err = ExportCAToWindows(context.Background(), custom, false); err != nil || !regexp.MustCompile(`^D:\\winhome\\\.easy-sso\\my_ca\.txt-[0-9a-f]{8}\.pem$`).MatchString(got.Windows) {
 		t.Fatalf("custom name: %+v %v", got, err)
+	}
+	// Same-named files from two folders never share an export.
+	other := filepath.Join(state, "other")
+	_ = os.Mkdir(other, 0o700)
+	_ = os.WriteFile(filepath.Join(other, "my ca.txt"), ca, 0o600)
+	if again, e := ExportCAToWindows(context.Background(), filepath.Join(other, "my ca.txt"), false); e != nil || again.Windows == got.Windows {
+		t.Fatalf("same basename shares %q: %v", again.Windows, e)
+	}
+	// A source reached through a link (e.g. ~/Downloads -> /mnt/c/...) is
+	// public content and still exports; only destination links are refused.
+	_ = os.Remove(dest) // the foreign file from above
+	_ = os.Symlink(state, filepath.Join(filepath.Dir(state), "linked-state"))
+	if _, e := ExportCAToWindows(context.Background(), filepath.Join(filepath.Dir(state), "linked-state", "rds-ca-aws.pem"), false); e != nil {
+		t.Fatalf("linked source: %v", e)
+	}
+	if !CachedCA(filepath.Join(filepath.Dir(state), "linked-state", "rds-ca-aws.pem")) {
+		t.Fatal("CachedCA refuses a linked source")
 	}
 	// A link in place of the folder is refused, never followed.
 	_ = os.RemoveAll(filepath.Join(home, ".easy-sso"))

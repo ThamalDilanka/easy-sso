@@ -307,6 +307,17 @@ func (m *Model) surface(content []string, width, height int, sidebar bool, x, y 
 	}
 	return out
 }
+
+// clipStatus wraps a status to the two lines the status bar shows.
+func clipStatus(notice string, inner int) []string {
+	lines := strings.Split(ansi.Wrap(notice, inner, " "), "\n")
+	if len(lines) > 2 {
+		lines = lines[:2]
+		lines[1] = ansi.Truncate(lines[1], max(1, inner-3), "") + "..."
+	}
+	return lines
+}
+
 func (m *Model) workspaceView() string {
 	p := m.palette()
 	lines := m.appTabs(0)
@@ -349,11 +360,7 @@ func (m *Model) workspaceView() string {
 			}
 		}
 	}
-	statusLines := strings.Split(ansi.Wrap(notice, inner, " "), "\n")
-	if len(statusLines) > 2 {
-		statusLines = statusLines[:2]
-		statusLines[1] = ansi.Truncate(statusLines[1], max(1, inner-3), "") + "..."
-	}
+	statusLines := clipStatus(notice, inner)
 	for i := range statusLines {
 		statusLines[i] = "  " + statusLines[i]
 	}

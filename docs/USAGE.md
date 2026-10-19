@@ -117,7 +117,7 @@ An endpoint ending in `.docdb.amazonaws.com`, `.docdb.amazonaws.com.cn` or `.doc
 
 | Platform | Cached CA file |
 | --- | --- |
-| Linux and WSL | `~/.config/easy-sso/rds-ca-aws.pem` |
+| Linux and WSL | `~/.config/easy-sso/rds-ca-aws.pem` (`$XDG_CONFIG_HOME/easy-sso` when that is set) |
 | macOS | `~/Library/Application Support/easy-sso/rds-ca-aws.pem` |
 | Native Windows | `%APPDATA%\easy-sso\rds-ca-aws.pem` |
 
@@ -165,12 +165,12 @@ easy-sso has no engine version setting. `retryWrites=false` works on every engin
 mongodb://127.0.0.1:37017/?tls=true&directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true&tlsCAFile=<encoded CA path>
 ```
 
-The status reads `Copied client URI with tlsCAFile <path>. In a shell, wrap it in single quotes.` The `&` characters split the command otherwise.
+The status reads `Copied client URI with tlsCAFile <path>. In a shell, wrap it in single quotes.` The `&` characters split the command otherwise. Single quotes work in bash, zsh and PowerShell; in Windows `cmd.exe` use double quotes. If the CA check failed, the status starts with `CA bundle unavailable: …` instead, and the copied `tlsCAFile` may not exist yet.
 
 - **mongosh:** `mongosh '<pasted URI>' --username <your DocumentDB user>` prompts for the password and hides it as you type. mongosh officially supports MongoDB server 7.0 and later. DocumentDB 5.0, 8.0 and elastic clusters work with it in practice; 3.6 and 4.0 do not work at all. mongosh enables retryable writes by default, so keep `retryWrites=false` in the URI.
 - **Compass:** paste the URI, or set the fields from MongoDB's Compass documentation: **Direct Connection** on the General tab, then on the TLS/SSL tab set TLS to **On**, **Certificate Authority** to the CA file and tick **tlsAllowInvalidHostnames**. AWS does not document Compass with DocumentDB.
 - **Drivers:** the URI carries no user; give the driver your user and password through its credential options. AWS documents `tlsCAFile` with the bundle for Python and Node, and a custom TLS setup for Go, Java and C# ([connecting programmatically](https://docs.aws.amazon.com/documentdb/latest/developerguide/connect_programmatically.html)).
-- **Java truststore fallback (Java and DataGrip):** if a Java client or DataGrip does not accept the PEM bundle, build a JKS truststore from the bundle with the `keytool` script in AWS's Java instructions. In DataGrip, add `-Djavax.net.ssl.trustStore=<path to truststore.jks> -Djavax.net.ssl.trustStorePassword=<truststore password>` to **Advanced > VM options** for that data source, and keep `tlsAllowInvalidHostnames=true` in the URL.
+- **Java truststore fallback (Java and DataGrip):** if a Java client or DataGrip does not accept the PEM bundle, build a JKS truststore from the bundle with the `keytool` script in AWS's Java instructions. In DataGrip, add `-Djavax.net.ssl.trustStore=<path to truststore.jks> -Djavax.net.ssl.trustStorePassword=<truststore password>` to **Advanced > VM options** for that data source, and keep `tlsAllowInvalidHostnames=true` in the URL. This fallback has not yet been tested on a live cluster.
 
 ### WSL (Windows DataGrip, easysso in WSL)
 
@@ -189,7 +189,7 @@ Earlier exports are refreshed automatically: whenever easysso checks the bundle 
 
 Before an export, the **CA file Windows** row shows the WSL share path, `\\wsl.localhost\<distro>\…\.config\easy-sso\rds-ca-aws.pem · x copies it to Windows`. `\\wsl.localhost` can start the distribution on Windows 11; the older `\\wsl$\<distro>\…` form works only while the distribution is running. The cached file is private to your Linux user, so prefer `x` if DataGrip cannot read the share path. Under WSL, `C` puts the exported Windows path (or else the share path) into `tlsCAFile`, because the clients run on Windows; edit it if you run mongosh inside WSL. `c` ends its status with the CA file to use, such as `CA file: <path>.`
 
-**When WSL interop is off**, `x` and the copy keys cannot run Windows commands. `x` reports `Windows home folder not found (is WSL interop on?). Copy it yourself: cp '<source>' /mnt/c/certs/`. Copy the file yourself and use `C:\certs\rds-ca-aws.pem` as the CA file:
+**When WSL interop is off**, `x` and the copy keys cannot run Windows commands. `x` reports `Windows home folder not found (is WSL interop on?). Copy it yourself: mkdir -p /mnt/c/certs && cp '<source>' /mnt/c/certs/`, where `<source>` is the path in the **CA file WSL** row. Copy the file yourself and use `C:\certs\rds-ca-aws.pem` as the CA file:
 
 ```sh
 mkdir -p /mnt/c/certs
@@ -241,5 +241,5 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 - **Not-primary write errors after a failover:** the cluster endpoint moves to the new primary through DNS, and AWS does not document when the relay resolves it again. Stop the tunnel in **Tunnels** and open it again, then reconnect the client (not yet tested on a live cluster).
 - **Login fails with a password that contains `%` followed by two characters:** DataGrip's driver encodes the user and password itself. Set `auto_encode_username_and_password=false` on the data source's **Advanced** tab and type each `%` as `%25`.
 - **Elastic cluster, but a CA row is shown:** its host ends in `.docdb.amazonaws.com`, so easy-sso cannot tell it is elastic. Leave the CA file out and keep **Use SSL** on.
-- **`Could not copy (install xclip or wl-clipboard on Linux). The URL is in Details (v).`:** install a clipboard tool, or select the URL line in the details by hand. Under WSL, the copy keys need WSL interop.
+- **`Could not copy (install xclip or wl-clipboard on Linux). …`:** install a clipboard tool, or select the URL line in the details by hand. That line is the DataGrip URL; for mongosh, Compass or drivers add `tls=true&tlsCAFile=<CA file row>` to it, as in the `C` example above. Under WSL, the copy keys need WSL interop.
 - **WSL: Windows DataGrip cannot connect or cannot read the CA file:** use `127.0.0.1`, press `x` and paste the Windows path into **CA file**, and check `localhostForwarding`, the local port and the firewall as described in [WSL](#wsl-windows-datagrip-easysso-in-wsl).
