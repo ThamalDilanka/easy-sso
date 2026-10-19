@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -124,6 +125,50 @@ func availablePort(t *testing.T) int {
 func db(port int) domain.Connection {
 	return domain.Connection{Kind: "db", Name: "db", AccountID: "111111111111", Partition: "aws", Region: "eu-west-1", Endpoint: "db.example.rds.amazonaws.com", DBPort: 5432, LocalPort: port, RelayInstanceID: "i-0123456789abcdef0", RelayRegion: "us-east-1"}
 }
+func docdb(port int) domain.Connection {
+	c := db(port)
+	c.Name, c.Endpoint, c.Region, c.DBPort = "docdb", "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com", "us-east-1", 27017
+	return c
+}
+
+// A DocumentDB tunnel is an ordinary remote-host forward: sessions never
+// fetch a CA bundle for it. Whether the relay carries several data sources
+// at once is checked live (L3); the fake never accepts connections.
+func TestDocumentDBTunnelJourney(t *testing.T) {
+	h := setup(t)
+	h.activate(t)
+	role, snap, e := h.roles.Snapshot("tui-one")
+	if e != nil {
+		t.Fatal(e)
+	}
+	m := newManager(t, h, nil)
+	ctx := context.Background()
+	run, e := m.Open(ctx, docdb(availablePort(t)), role, snap)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if run.State != "Listening" || run.SessionID == "" {
+		t.Fatal(run)
+	}
+	calls, _ := os.ReadFile(filepath.Join(h.dir, "calls.jsonl"))
+	for _, want := range []string{"AWS-StartPortForwardingSessionToRemoteHost", `\"host\":[\"example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com\"]`, `\"portNumber\":[\"27017\"]`, fmt.Sprintf(`\"localPortNumber\":[\"%d\"]`, run.Connection.LocalPort)} {
+		if !bytes.Contains(calls, []byte(want)) {
+			t.Fatalf("start call lacks %s", want)
+		}
+	}
+	if _, e = os.Stat(filepath.Join(h.state, "rds-ca-aws.pem")); !os.IsNotExist(e) {
+		t.Fatal("sessions fetched a CA bundle for a DocumentDB tunnel", e)
+	}
+	if e = m.Stop(ctx, run.ID); e != nil {
+		t.Fatal(e)
+	}
+	listener, e := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(run.Connection.LocalPort)))
+	if e != nil {
+		t.Fatal("tunnel still listening after stop", e)
+	}
+	listener.Close()
+}
+
 func newManager(t *testing.T, h *harness, adapter terminal.Adapter) *sessions.Manager {
 	t.Helper()
 	m, e := sessions.NewWithOptions(h.cli, h.state, "unused-test-executable", h.bookmarks, sessions.Options{Terminal: adapter, Attempts: 80, Interval: 25 * time.Millisecond})
