@@ -135,7 +135,9 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 			m.focus = 1
 		case "field":
 			if m.form != nil {
+				old := m.form.index
 				m.form.index = a.index
+				m.leaveField(old)
 			}
 		case "ack":
 			if m.form != nil && m.review != nil {
@@ -210,7 +212,7 @@ func (m *Model) controls() []control {
 				c = append(c, control{"New window", "w"})
 			}
 			c = append(c, control{"Edit", "e"})
-			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() {
+			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() && !isDocumentDB(m.review.connection) {
 				c = append(c, control{"Set up IAM", "l"})
 			}
 			if m.review.duplicate {
@@ -246,7 +248,7 @@ func (m *Model) controls() []control {
 				}
 				c = append(c, control{label, "enter"})
 				c = append(c, control{"Edit", "e"}, control{"Details", "v"})
-				if !m.targets()[m.selectedRow].IAMDatabase() {
+				if t := m.targets()[m.selectedRow]; !t.IAMDatabase() && !isDocumentDB(t) {
 					c = append(c, control{"Set up IAM", "l"})
 				}
 			}

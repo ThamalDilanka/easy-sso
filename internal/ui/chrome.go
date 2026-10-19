@@ -509,6 +509,9 @@ func (m *Model) workspaceView() string {
 			details = append([]string{"", "Selected connection"}, details[2:]...)
 			if c.Kind == "db" {
 				login := "Tunnel only · Edit to enable PostgreSQL IAM"
+				if isDocumentDB(c) && !c.IAMDatabase() {
+					login = documentDBLogin
+				}
 				if c.IAMDatabase() {
 					login = c.DBUser + " @ " + c.Database + " · PostgreSQL IAM"
 				}
@@ -523,6 +526,8 @@ func (m *Model) workspaceView() string {
 					details = []string{"Selected connection: " + c.Name, "Database: " + c.Endpoint + " · " + c.Region, "Login: tunnel only (Edit to enable PostgreSQL IAM)"}
 					if c.IAMDatabase() {
 						details[2] = "PostgreSQL IAM: " + c.DBUser + " @ " + c.Database
+					} else if isDocumentDB(c) {
+						details[2] = "Login: tunnel only (your DocumentDB user stays in your client)"
 					}
 					if hint := m.databaseTunnelHint(c); hint != "" {
 						details[2] = "Open tunnel: " + hint

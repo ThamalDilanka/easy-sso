@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	tea "github.com/charmbracelet/bubbletea"
 	"strconv"
@@ -37,6 +38,10 @@ func (m *Model) editConnection(c domain.Connection) {
 }
 
 func (m *Model) setupDatabaseLogin(c domain.Connection) {
+	if isDocumentDB(c) {
+		m.status = "IAM login setup is for PostgreSQL; DocumentDB uses your own user in the client."
+		return
+	}
 	m.editConnection(c)
 	m.form.fields[7].value = "postgres-iam"
 	m.form.index = 8
@@ -66,11 +71,15 @@ func (m *Model) formKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if key == "tab" || key == "down" {
+		old := f.index
 		f.index = (f.index + 1) % n
+		m.leaveField(old)
 		return nil
 	}
 	if key == "up" {
+		old := f.index
 		f.index = (f.index + n - 1) % n
+		m.leaveField(old)
 		return nil
 	}
 	if f.kind == "activation" && f.index == len(f.fields) {
@@ -92,6 +101,7 @@ func (m *Model) formKey(k tea.KeyMsg) tea.Cmd {
 		}
 		if f.index+1 < len(f.fields) {
 			f.index++
+			m.leaveField(f.index - 1)
 			return nil
 		}
 		return m.submitForm()
@@ -140,6 +150,10 @@ func (m *Model) submitForm() tea.Cmd {
 				}
 				if c.AuthMode != "" && c.AuthMode != "postgres-iam" {
 					m.status = "Choose postgres-iam or tunnel for authentication."
+					return nil
+				}
+				if err := connections.DocumentDBMode(c); err != nil {
+					m.status = err.Error()
 					return nil
 				}
 				if c.IAMDatabase() && (c.Database == "" || c.DBUser == "") {
@@ -207,6 +221,32 @@ func (m *Model) submitForm() tea.Cmd {
 		m.status = "Account label updated for this workspace."
 	}
 	return nil
+}
+
+// leaveField switches a new database form to DocumentDB defaults once focus
+// leaves a DocumentDB endpoint. Only values still holding a default change.
+func (m *Model) leaveField(old int) {
+	f := m.form
+	if f == nil || f.kind != "db" || f.original != nil || old != 1 || f.index == old || len(f.fields) < 8 || !connections.DocumentDBEndpoint(strings.TrimSpace(f.fields[1].value)) {
+		return
+	}
+	var changed []string
+	for _, d := range []struct {
+		index          int
+		from, to, name string
+	}{{3, "5432", "27017", "DB port 27017"}, {6, "15432", "37017", "local port 37017"}, {7, "postgres-iam", "tunnel", "auth to tunnel"}} {
+		if strings.TrimSpace(f.fields[d.index].value) == d.from {
+			f.fields[d.index].value = d.to
+			changed = append(changed, d.name)
+		}
+	}
+	switch len(changed) {
+	case 0:
+	case 3:
+		m.status = "DocumentDB endpoint: ports set to 27017/37017, auth set to tunnel"
+	default:
+		m.status = "DocumentDB endpoint: set " + strings.Join(changed, ", ")
+	}
 }
 
 // ValidatePort provides inline validation before backend validation and binding.

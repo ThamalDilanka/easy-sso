@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -316,7 +317,11 @@ func (m *Model) content() string {
 		}
 		if m.form.kind == "db" {
 			lines = append(lines, "")
-			lines = append(lines, databaseLoginGuidance()...)
+			if connections.DocumentDBEndpoint(strings.TrimSpace(m.form.fields[1].value)) {
+				lines = append(lines, "DocumentDB: easy-sso opens the tunnel with SSO only; your DocumentDB user stays in your client.", "Keep Auth on tunnel and leave the IAM database fields blank.")
+			} else {
+				lines = append(lines, databaseLoginGuidance()...)
+			}
 		}
 		if m.form.kind == "activation" {
 			check := "[ ]"
@@ -338,14 +343,14 @@ func (m *Model) content() string {
 			if m.screen == ec2 {
 				return "No saved instances here yet.\n\nYour first successful connection will appear here.\nAdd an instance ID and its own region to get started."
 			}
-			return "No saved databases here yet.\n\nAdd a connection with its database user and SSM relay.\nConnect terminal handles the tunnel and PostgreSQL IAM login."
+			return "No saved databases here yet.\n\nAdd an RDS, Aurora or DocumentDB endpoint and its SSM relay.\nPostgreSQL IAM bookmarks open a terminal; DocumentDB tunnels serve your own client."
 		}
 		return m.connectionList(ts)
 	case sessions, tunnels:
 		rs := m.visibleRuns()
 		if len(rs) == 0 {
 			if m.screen == tunnels {
-				return "No application-owned tunnels.\nOpen a saved database connection from view 2.\nPostgreSQL IAM bookmarks also open an authenticated terminal."
+				return "No application-owned tunnels.\nOpen a saved database connection from view 2.\nDocumentDB tunnels serve DataGrip or any MongoDB client."
 			}
 			return "No application-owned sessions.\nSelect an instance in EC2 and press Enter to connect.\nSwitch servers in the list; each embedded shell stays alive."
 		}

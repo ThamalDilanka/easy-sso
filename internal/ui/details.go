@@ -154,9 +154,11 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 	if c.Kind == "ec2" {
 		fields = append(fields, [2]string{"Instance", c.InstanceID}, [2]string{"Region", c.Region}, [2]string{"Document", documentLabel(c)})
 	} else {
-		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", fmt.Sprintf("localhost:%d", c.LocalPort)})
+		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", fmt.Sprintf("localhost:%d", c.LocalPort)})
 		if c.IAMDatabase() {
 			fields = append(fields, [2]string{"Login", "PostgreSQL IAM"}, [2]string{"Database", c.Database}, [2]string{"DB user", c.DBUser})
+		} else if isDocumentDB(c) {
+			fields = append(fields, [2]string{"Login", documentDBLogin})
 		} else {
 			fields = append(fields, [2]string{"Login", "Tunnel only · Edit to enable PostgreSQL IAM"})
 		}
@@ -175,6 +177,8 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 			lines = append(lines, "p: edit local port")
 			if c.IAMDatabase() {
 				lines = append(lines, databaseLoginGuidance()...)
+			} else if isDocumentDB(c) {
+				lines = append(lines, "Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.")
 			} else {
 				lines = append(lines, "Tunnel transport only; use an existing database login in your database client.", "Set up IAM login (l) saves the database name and username; an administrator must configure IAM access first.")
 			}

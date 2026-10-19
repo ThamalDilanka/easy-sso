@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	tea "github.com/charmbracelet/bubbletea"
 	"reflect"
@@ -11,6 +12,11 @@ import (
 
 func (m *Model) open(c domain.Connection) tea.Cmd { return m.openMode(c, false) }
 func (m *Model) openMode(c domain.Connection, window bool) tea.Cmd {
+	// A bookmark saved before this check existed must not reach a session.
+	if err := connections.DocumentDBMode(c); err != nil {
+		m.status = err.Error()
+		return nil
+	}
 	p, ok := m.profile()
 	if !ok || p.Error != "" {
 		m.status = "Select an available profile first."

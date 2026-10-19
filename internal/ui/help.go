@@ -42,8 +42,8 @@ func shortcutGroups() []shortcutGroup {
 			{"f / N", "In a duplicate-shell review: focus existing / request new shell (uppercase N)."},
 		}},
 		{"DATABASES", []shortcut{
-			{"Enter", "Connect a PostgreSQL IAM terminal, or open a legacy tunnel-only bookmark."},
-			{"l", "Set database name/user for IAM login; AWS and DB permissions must already be configured."},
+			{"Enter", "Connect a PostgreSQL IAM terminal, or open a tunnel (DocumentDB or tunnel-only bookmarks)."},
+			{"l", "PostgreSQL: set database name/user for IAM login; AWS and DB permissions must already be configured."},
 			{"v", "Show database route and login details without connecting."},
 			{"n", "Add a database and relay bookmark."},
 			{"e", "Edit all saved database and relay fields; also available in review."},
