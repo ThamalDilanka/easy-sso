@@ -105,7 +105,7 @@ func (e *Embedded) LaunchClient(ctx context.Context, id string, cmd *exec.Cmd, f
 	}
 	s, err := startScreen(cmd, 80, 24, filter)
 	if err != nil {
-		return nil, errors.New("could not start the PostgreSQL terminal")
+		return nil, errors.New("could not start the database terminal")
 	}
 	e.screens[id] = s
 	return s.done, nil

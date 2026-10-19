@@ -195,3 +195,33 @@ esac
 		t.Fatal("partial history query accepted")
 	}
 }
+func TestChildCredentialEnv(t *testing.T) {
+	for _, name := range []string{"AWS_PROFILE", "AWS_ACCESS_KEY_ID", "NODE_OPTIONS"} {
+		t.Setenv(name, "ambient-unintended")
+	}
+	s := snapshot()
+	for _, null := range []string{os.DevNull, "NUL"} {
+		env, err := ChildCredentialEnv(s, "us-east-1", null, 30*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"AWS_ACCESS_KEY_ID=ASIATESTKEY", "AWS_SECRET_ACCESS_KEY=TESTSECRET", "AWS_SESSION_TOKEN=TESTTOKEN", "AWS_REGION=us-east-1", "AWS_CONFIG_FILE=" + null, "AWS_SHARED_CREDENTIALS_FILE=" + null, "AWS_EC2_METADATA_DISABLED=true"}
+		if strings.Join(env, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("child env %q, want %q", env, want)
+		}
+	}
+	expired, newline, shortLived := s, s, s
+	expired.Expiration = time.Now().Add(-time.Minute)
+	newline.SessionToken = "TEST\nTOKEN"
+	shortLived.Expiration = time.Now().Add(5 * time.Minute)
+	for _, bad := range []domain.Snapshot{expired, newline, shortLived, {}} {
+		if env, err := ChildCredentialEnv(bad, "us-east-1", os.DevNull, 10*time.Minute); err == nil || env != nil {
+			t.Fatal("unsafe snapshot accepted", env)
+		}
+	}
+	for _, region := range []string{"", "us-east-1\n"} {
+		if _, err := ChildCredentialEnv(s, region, os.DevNull, 30*time.Second); err == nil {
+			t.Fatalf("region %q accepted", region)
+		}
+	}
+}

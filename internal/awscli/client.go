@@ -96,6 +96,24 @@ func ValidateSnapshot(s domain.Snapshot) error {
 	}
 	return nil
 }
+
+// ChildCredentialEnv returns the frozen keys and the provider lock-down for a
+// non-AWS-CLI child. nullDevice is os.DevNull for a POSIX child and "NUL" for
+// a Windows child started from WSL. minLife refuses a snapshot that expires sooner.
+// The empty settings files and the disabled metadata service stop the AWS SDK
+// chain from falling back to a profile or an instance role.
+func ChildCredentialEnv(s domain.Snapshot, region, nullDevice string, minLife time.Duration) ([]string, error) {
+	if err := ValidateSnapshot(s); err != nil {
+		return nil, err
+	}
+	if time.Until(s.Expiration) < minLife {
+		return nil, errors.New("Role credentials expire too soon. Activate again to start new connections")
+	}
+	if region == "" || strings.ContainsAny(region+nullDevice, "\r\n\x00") {
+		return nil, errors.New("invalid AWS region for the database client")
+	}
+	return []string{"AWS_ACCESS_KEY_ID=" + s.AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + s.SecretAccessKey, "AWS_SESSION_TOKEN=" + s.SessionToken, "AWS_REGION=" + region, "AWS_CONFIG_FILE=" + nullDevice, "AWS_SHARED_CREDENTIALS_FILE=" + nullDevice, "AWS_EC2_METADATA_DISABLED=true"}, nil
+}
 func (c *Client) environment(snapshot *domain.Snapshot) []string {
 	allowed := map[string]bool{}
 	for _, name := range []string{"PATH", "HOME", "USER", "LOGNAME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TERM", "COLORTERM", "DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "AWS_CA_BUNDLE"} {

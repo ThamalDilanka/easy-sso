@@ -104,7 +104,7 @@ func validCA(data []byte) bool { return x509.NewCertPool().AppendCertsFromPEM(da
 // credential, or connection string containing a password appears in argv.
 func Command(path, ca, id, token string, c domain.Connection) (*exec.Cmd, *Output) {
 	marker := "\x1b]777;easy-sso-db-ready-" + id + "\x07"
-	output := &Output{marker: marker, secret: token, Ready: make(chan struct{})}
+	output := &Output{marker: marker, secrets: []string{token}, classify: postgresFailure, fallback: "PostgreSQL did not reach an authenticated prompt; check terminal output, database reachability and IAM setup.", Ready: make(chan struct{})}
 	cmd := exec.Command(path, "-X", "-w", "--set", "PROMPT1=%["+marker+"%]%/%R%x%# ", "--set", "HISTFILE="+os.DevNull, "--pset", "pager=off")
 	for _, env := range os.Environ() {
 		key, _, _ := strings.Cut(env, "=")
@@ -117,15 +117,23 @@ func Command(path, ca, id, token string, c domain.Connection) (*exec.Cmd, *Outpu
 	return cmd, output
 }
 
+// tlsFailure is shared by every engine: the CA bundle and the real endpoint are
+// the same inputs whichever client verifies them.
+const tlsFailure = "Database TLS verification failed; check the real RDS endpoint and its CA bundle."
+
 // Output recognizes the first interactive prompt, emitted only after login.
 // The private nonprinting prompt marker is removed before terminal rendering.
-// It also redacts the token even across read boundaries, without a transcript.
+// It also redacts every secret even across read boundaries, without a transcript.
+// Failures are classified on text only and always reported as fixed text.
 type Output struct {
-	mu                                  sync.Mutex
-	marker, secret, pending, diagnostic string
-	ready                               bool
-	Ready                               chan struct{}
-	failure                             string
+	mu                          sync.Mutex
+	marker, pending, diagnostic string
+	secrets                     []string
+	classify                    func(string) string
+	fallback                    string
+	ready                       bool
+	Ready                       chan struct{}
+	failure                     string
 }
 
 func (o *Output) Filter(p []byte) []byte {
@@ -142,12 +150,12 @@ func (o *Output) Filter(p []byte) []byte {
 			}
 			continue
 		}
-		if o.secret != "" && strings.HasPrefix(o.pending, o.secret) {
+		if secret := o.secretAt(); secret != "" {
 			out.WriteString("[redacted]")
-			o.pending = o.pending[len(o.secret):]
+			o.pending = o.pending[len(secret):]
 			continue
 		}
-		if strings.HasPrefix(o.marker, o.pending) || (o.secret != "" && strings.HasPrefix(o.secret, o.pending)) {
+		if o.partial() {
 			break
 		}
 		out.WriteByte(o.pending[0])
@@ -156,13 +164,8 @@ func (o *Output) Filter(p []byte) []byte {
 	text := out.String()
 	if !o.ready {
 		d := strings.ToLower(o.diagnostic + text)
-		switch {
-		case strings.Contains(d, "certificate"), strings.Contains(d, "ssl error"):
-			o.failure = "Database TLS verification failed; check the real RDS endpoint and its CA bundle."
-		case strings.Contains(d, "authentication failed"), strings.Contains(d, "no pg_hba.conf"), strings.Contains(d, "password authentication"):
-			o.failure = "Database IAM login rejected. Ask an administrator to check RDS IAM is enabled, this DB user has rds_iam, and the selected role has rds-db:connect for the DB resource ID and username. While setup is pending, Edit (e) and set Auth to tunnel to use an existing database login in your own client."
-		case strings.Contains(d, "does not exist"):
-			o.failure = "Database login failed; verify the saved database name and database username."
+		if failure := o.classify(d); failure != "" {
+			o.failure = failure
 		}
 		if len(d) > 256 {
 			d = d[len(d)-256:]
@@ -172,13 +175,49 @@ func (o *Output) Filter(p []byte) []byte {
 	return []byte(text)
 }
 
+// secretAt returns the longest secret that starts the pending text.
+func (o *Output) secretAt() string {
+	match := ""
+	for _, secret := range o.secrets {
+		if secret != "" && len(secret) > len(match) && strings.HasPrefix(o.pending, secret) {
+			match = secret
+		}
+	}
+	return match
+}
+
+// partial reports whether the pending text may still grow into the marker or a secret.
+func (o *Output) partial() bool {
+	if strings.HasPrefix(o.marker, o.pending) {
+		return true
+	}
+	for _, secret := range o.secrets {
+		if secret != "" && strings.HasPrefix(secret, o.pending) {
+			return true
+		}
+	}
+	return false
+}
+
+func postgresFailure(d string) string {
+	switch {
+	case strings.Contains(d, "certificate"), strings.Contains(d, "ssl error"):
+		return tlsFailure
+	case strings.Contains(d, "authentication failed"), strings.Contains(d, "no pg_hba.conf"), strings.Contains(d, "password authentication"):
+		return "Database IAM login rejected. Ask an administrator to check RDS IAM is enabled, this DB user has rds_iam, and the selected role has rds-db:connect for the DB resource ID and username. While setup is pending, Edit (e) and set Auth to tunnel to use an existing database login in your own client."
+	case strings.Contains(d, "does not exist"):
+		return "Database login failed; verify the saved database name and database username."
+	}
+	return ""
+}
+
 func (o *Output) Failure() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.failure != "" {
 		return o.failure
 	}
-	return "PostgreSQL did not reach an authenticated prompt; check terminal output, database reachability and IAM setup."
+	return o.fallback
 }
 
 // CachedCA reports whether path holds a valid CA bundle, whatever its age.
