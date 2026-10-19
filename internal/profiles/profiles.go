@@ -70,6 +70,17 @@ var roleARNRE = regexp.MustCompile(`^arn:(aws|aws-cn|aws-us-gov):iam::([0-9]{12}
 var assumedRE = regexp.MustCompile(`^arn:(aws|aws-cn|aws-us-gov):sts::([0-9]{12}):assumed-role/([A-Za-z0-9+=,.@_-]+)/([^/\s]+)$`)
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9_.@+=,-]+$`)
 
+// IAMRoleARN maps a verified assumed-role caller to the role ARN DocumentDB
+// expects as its $external user. An STS assumed-role ARN never carries the
+// role path, so the result is path-less.
+func IAMRoleARN(id domain.Identity) (string, error) {
+	m := assumedRE.FindStringSubmatch(id.ARN)
+	if m == nil || m[2] != id.Account {
+		return "", errors.New("identity is not an assumed role")
+	}
+	return "arn:" + m[1] + ":iam::" + m[2] + ":role/" + m[3], nil
+}
+
 func Load(path string) ([]domain.Profile, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

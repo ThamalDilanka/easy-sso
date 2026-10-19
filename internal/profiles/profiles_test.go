@@ -148,3 +148,93 @@ func TestSyntheticConfig(t *testing.T) {
 		t.Fatalf("missing profiles: %v", want)
 	}
 }
+
+func TestIAMRoleARN(t *testing.T) {
+	for _, tc := range []struct {
+		name, partition, account, roleArn string
+		identity                          domain.Identity
+		want                              string
+		wantErr                           bool
+	}{
+		{
+			name:      "aws partition",
+			partition: "aws",
+			account:   "123456789012",
+			roleArn:   "arn:aws:sts::123456789012:assumed-role/DocumentDBRole/session-name",
+			identity: domain.Identity{
+				Account: "123456789012",
+				ARN:     "arn:aws:sts::123456789012:assumed-role/DocumentDBRole/session-name",
+				UserID:  "user123",
+			},
+			want:    "arn:aws:iam::123456789012:role/DocumentDBRole",
+			wantErr: false,
+		},
+		{
+			name:      "aws-cn partition",
+			partition: "aws-cn",
+			account:   "111122223333",
+			roleArn:   "arn:aws-cn:sts::111122223333:assumed-role/ChinaRole/session",
+			identity: domain.Identity{
+				Account: "111122223333",
+				ARN:     "arn:aws-cn:sts::111122223333:assumed-role/ChinaRole/session",
+				UserID:  "user456",
+			},
+			want:    "arn:aws-cn:iam::111122223333:role/ChinaRole",
+			wantErr: false,
+		},
+		{
+			name:      "aws-us-gov partition",
+			partition: "aws-us-gov",
+			account:   "222222222222",
+			roleArn:   "arn:aws-us-gov:sts::222222222222:assumed-role/GovRole/session",
+			identity: domain.Identity{
+				Account: "222222222222",
+				ARN:     "arn:aws-us-gov:sts::222222222222:assumed-role/GovRole/session",
+				UserID:  "user789",
+			},
+			want:    "arn:aws-us-gov:iam::222222222222:role/GovRole",
+			wantErr: false,
+		},
+		{
+			name:    "iam user arn",
+			account: "123456789012",
+			identity: domain.Identity{
+				Account: "123456789012",
+				ARN:     "arn:aws:iam::123456789012:user/alice",
+				UserID:  "AIDAI1234567890ABCDE",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "federated user arn",
+			account: "123456789012",
+			identity: domain.Identity{
+				Account: "123456789012",
+				ARN:     "arn:aws:iam::123456789012:federated-user/alice",
+				UserID:  "FED1234567890ABCDE",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "account mismatch",
+			account: "123456789012",
+			identity: domain.Identity{
+				Account: "999999999999",
+				ARN:     "arn:aws:sts::123456789012:assumed-role/DocumentDBRole/session",
+				UserID:  "user123",
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := IAMRoleARN(tc.identity)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("IAMRoleARN() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if got != tc.want {
+				t.Errorf("IAMRoleARN() got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
