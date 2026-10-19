@@ -516,6 +516,9 @@ func (m *Model) workspaceView() string {
 					login = c.DBUser + " @ " + c.Database + " · PostgreSQL IAM"
 				}
 				details = []string{"", "Selected connection", m.detailRow("Name", c.Name), m.detailRow("Endpoint", c.Endpoint), m.detailRow("Login", login), m.detailRow("Route", fmt.Sprintf("localhost:%d → DB:%d · %s", c.LocalPort, c.DBPort, c.Region))}
+				if isDocumentDB(c) {
+					details = append(details, m.detailRow("Client", "DataGrip / any MongoDB client · c copies URL"))
+				}
 				if hint := m.databaseTunnelHint(c); hint != "" {
 					details = append(details, m.detailRow("Open tunnel", hint))
 				}
@@ -527,7 +530,7 @@ func (m *Model) workspaceView() string {
 					if c.IAMDatabase() {
 						details[2] = "PostgreSQL IAM: " + c.DBUser + " @ " + c.Database
 					} else if isDocumentDB(c) {
-						details[2] = "Login: tunnel only (your DocumentDB user stays in your client)"
+						details[2] = "DocumentDB client: DataGrip or any MongoDB client · c copies URL"
 					}
 					if hint := m.databaseTunnelHint(c); hint != "" {
 						details[2] = "Open tunnel: " + hint

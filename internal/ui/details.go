@@ -178,7 +178,8 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 			if c.IAMDatabase() {
 				lines = append(lines, databaseLoginGuidance()...)
 			} else if isDocumentDB(c) {
-				lines = append(lines, "Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.")
+				lines = append(lines, "Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.", "")
+				lines = append(lines, m.documentDBClient(c, m.documentDBPort(c))...)
 			} else {
 				lines = append(lines, "Tunnel transport only; use an existing database login in your database client.", "Set up IAM login (l) saves the database name and username; an administrator must configure IAM access first.")
 			}
@@ -239,6 +240,10 @@ func (m *Model) runDetails(r domain.Run) []string {
 			label = "Status: "
 		}
 		lines = append(lines, label+r.Error)
+	}
+	if isDocumentDB(r.Connection) && activeTunnel(r) {
+		lines = append(lines, "")
+		lines = append(lines, m.documentDBClient(r.Connection, r.Connection.LocalPort)...)
 	}
 	return lines
 }

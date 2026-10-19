@@ -41,8 +41,16 @@ func (m *Model) detailsSelected() tea.Cmd {
 	case sessions, tunnels:
 		rs := m.visibleRuns()
 		if m.selectedRow >= 0 && m.selectedRow < len(rs) {
-			m.review = &review{kind: "run", run: rs[m.selectedRow], listScroll: m.scroll}
+			r := rs[m.selectedRow]
+			m.review = &review{kind: "run", run: r, listScroll: m.scroll}
 			m.scroll = 0
+			if isDocumentDB(r.Connection) {
+				if !activeTunnel(r) {
+					m.status = "Tunnel not open; Enter on the bookmark reopens it."
+					return nil
+				}
+				return m.ensureCA(r.Connection)
+			}
 		}
 	case credentials:
 		if m.selectedRow >= 0 && m.selectedRow < len(m.roles) {

@@ -185,7 +185,10 @@ type Services struct {
 	AccountAliases   map[string]string
 	SaveAccountAlias func(string, string) error
 	// CopyText replaces the system clipboard writer; nil selects the default.
-	CopyText     func(string) error
+	CopyText func(string) error
+	// EnsureCA returns a valid public CA bundle path for a database bookmark;
+	// nil selects the cached AWS bundle in Prerequisites.StateDir.
+	EnsureCA     func(context.Context, Connection) (string, error)
 	BookmarkPath string
 	// True only for a qualified terminal adapter with stable handles.
 	FocusTerminal bool

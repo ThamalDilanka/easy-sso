@@ -180,3 +180,10 @@ func (o *Output) Failure() string {
 	}
 	return "PostgreSQL did not reach an authenticated prompt; check terminal output, database reachability and IAM setup."
 }
+
+// CachedCA reports whether path holds a valid CA bundle, whatever its age.
+// It only labels a still-usable file; EnsureCA never falls back to it.
+func CachedCA(path string) bool {
+	data, err := store.Read(path, 1024*1024)
+	return err == nil && validCA(data)
+}

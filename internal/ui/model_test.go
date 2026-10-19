@@ -184,21 +184,34 @@ type fixture struct {
 	creds    *fakeCredentials
 	conns    *fakeConnections
 	sessions *fakeSessions
+	// ensured records each CA bundle request; no UI test touches the network.
+	ensured *[]domain.Connection
 }
 
 func setupUI(t *testing.T) fixture {
 	t.Helper()
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("EASY_SSO_ASCII", "1")
+	// The dev box is WSL: never reach clip.exe or the real clipboard.
+	t.Setenv("WSL_DISTRO_NAME", "")
 	profiles := []domain.Profile{{Name: "one", SSOSession: "login", AccountID: "111111111111", Role: "ReadOnlyAccess", Partition: "aws", Region: "us-east-1", DirectSSO: true}, {Name: "two", SSOSession: "login", AccountID: "222222222222", Role: "OrganizationAccountAccessRole", Partition: "aws", Region: "eu-west-1", Chain: []string{"one", "two"}}}
 	c := &fakeCredentials{}
 	b := &fakeConnections{}
 	s := &fakeSessions{connections: b}
 	m := New(domain.Services{Profiles: profiles, Credentials: c, Connections: b, Sessions: s, Prerequisites: domain.Prerequisites{Ready: true, CLIPath: "fake-aws", PluginPath: "fake-plugin", StateDir: "/test-state"}, AccountAliases: map[string]string{"111111111111": "First account"}}).(*Model)
+	m.services.CopyText = func(string) error {
+		t.Error("unexpected clipboard write")
+		return errors.New("unexpected clipboard write")
+	}
+	ensured := &[]domain.Connection{}
+	m.services.EnsureCA = func(_ context.Context, c domain.Connection) (string, error) {
+		*ensured = append(*ensured, c)
+		return "/test-state/rds-ca-" + c.Partition + ".pem", nil
+	}
 	m.width = 140
 	m.height = 40
 	finish(m, m.load())
-	return fixture{m, c, b, s}
+	return fixture{m, c, b, s, ensured}
 }
 func finish(m *Model, cmd tea.Cmd) {
 	if cmd == nil {

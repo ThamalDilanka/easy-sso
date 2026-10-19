@@ -263,6 +263,9 @@ func (m *Model) footer() string {
 		if m.screen == ec2 {
 			return "↑/↓: select | Enter: connect | v: details | n: new | e: edit" + common
 		}
+		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) && isDocumentDB(ts[m.selectedRow]) {
+			return "↑/↓: select | Enter: open tunnel | v: details | n: new | e: edit" + common
+		}
 		return "↑/↓: select | Enter: connect | v: details | l: IAM setup | n: new | e: edit" + common
 	case sessions, tunnels:
 		action := "Enter: details"

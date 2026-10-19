@@ -123,12 +123,17 @@ type Model struct {
 	maxScroll, maxSidebarScroll         int
 	terminalArea                        paneArea
 	reconnectFrom                       string
+	// ca holds DocumentDB CA bundle checks by path; caStatus is the Listening
+	// status a failed check may extend; pendingRoute selects a new bookmark.
+	ca           map[string]caResult
+	caStatus     string
+	pendingRoute *domain.Connection
 }
 
 func New(s domain.Services) tea.Model {
 	s.Profiles = orderedProfiles(s.Profiles)
 	_, noColor := os.LookupEnv("NO_COLOR")
-	m := &Model{services: s, width: 100, height: 30, selectedProfile: 0, focus: 1, drafts: make(map[screen]form), picked: make(map[int]bool), aliases: make(map[string]string), ascii: os.Getenv("EASY_SSO_ASCII") != "" || os.Getenv("TERM") == "dumb", noColor: noColor || os.Getenv("TERM") == "dumb", dark: os.Getenv("EASY_SSO_THEME") == "dark"}
+	m := &Model{services: s, width: 100, height: 30, selectedProfile: 0, focus: 1, drafts: make(map[screen]form), ca: make(map[string]caResult), picked: make(map[int]bool), aliases: make(map[string]string), ascii: os.Getenv("EASY_SSO_ASCII") != "" || os.Getenv("TERM") == "dumb", noColor: noColor || os.Getenv("TERM") == "dumb", dark: os.Getenv("EASY_SSO_THEME") == "dark"}
 	if os.Getenv("EASY_SSO_THEME") == "" {
 		m.dark = s.Theme == "dark"
 	}
@@ -251,6 +256,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clipboardMsg:
 		m.status = x.feedback
 		return m, nil
+	case caMsg:
+		m.receiveCA(x)
+		return m, nil
 	case authActionMsg:
 		if m.busy && x.request == m.request && x.url == m.authURL {
 			m.authFeedback = x.feedback
@@ -316,6 +324,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.pendingTarget = ""
+		}
+		if m.pendingRoute != nil {
+			// A first open has no bookmark ID yet, so match the route.
+			for i, c := range m.targets() {
+				if sameDocumentDBRoute(c, *m.pendingRoute) {
+					m.selectedRow = i
+					break
+				}
+			}
+			m.pendingRoute = nil
 		}
 		if x.err != nil {
 			m.status = "Error: " + x.err.Error()
@@ -410,7 +428,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.review = nil
 			m.form = nil
-			if strings.EqualFold(x.run.State, "listening") {
+			if strings.EqualFold(x.run.State, "listening") && isDocumentDB(x.run.Connection) {
+				m.status = fmt.Sprintf("Tunnel open at 127.0.0.1:%d · profile [%s]. Connect DataGrip or any MongoDB client with your DocumentDB user; c copies the URL, v shows steps.", x.run.Connection.LocalPort, x.run.Profile.Name)
+				m.caStatus = m.status
+				route := x.run.Connection
+				m.pendingRoute = &route
+				return m, tea.Batch(m.afterOperation(), m.ensureCA(x.run.Connection))
+			} else if strings.EqualFold(x.run.State, "listening") {
 				m.status = fmt.Sprintf("Tunnel open at localhost:%d · profile [%s]; database login not attempted. Set up IAM login (l) for automatic token login, or use your database client.", x.run.Connection.LocalPort, x.run.Profile.Name)
 			} else {
 				m.status = "Session state: " + x.run.State + ". The separate terminal window keeps its original identity."

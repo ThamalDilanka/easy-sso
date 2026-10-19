@@ -54,6 +54,7 @@ func TestWSLCopyURLUsesWindowsClipboardAndReportsFailure(t *testing.T) {
 	}
 	f := setupUI(t)
 	m := f.m
+	m.services.CopyText = nil // exercise the real WSL writer against a fake clip.exe
 	m.busy = true
 	m.authURL = "https://device.example/?user_code=ABCD"
 	dir := t.TempDir()
