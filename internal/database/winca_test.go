@@ -14,14 +14,15 @@ import (
 	"unicode/utf16"
 
 	"github.com/ThamalDilanka/easy-sso/internal/store"
+	"github.com/ThamalDilanka/easy-sso/internal/wslinterop"
 )
 
 // No database test may run cmd.exe or wslpath.
 func init() {
-	runInterop = func(_ context.Context, _, name string, args ...string) ([]byte, error) {
+	wslinterop.RunInterop = func(_ context.Context, _, name string, args ...string) ([]byte, error) {
 		panic("unexpected interop call: " + name + " " + strings.Join(args, " "))
 	}
-	lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	wslinterop.LookPath = func(string) (string, error) { return "", errors.New("not found") }
 }
 
 func utf16le(s string) []byte {
@@ -30,26 +31,6 @@ func utf16le(s string) []byte {
 		out = append(out, byte(u), byte(u>>8))
 	}
 	return out
-}
-
-func TestParseWindowsHome(t *testing.T) {
-	for _, tc := range []struct {
-		in   []byte
-		want string
-	}{
-		{utf16le("D:\\winhome\r\n"), `D:\winhome`},
-		{[]byte("D:\\winhome\r\n"), `D:\winhome`},
-		{utf16le("D:\\exämple\r\n"), `D:\exämple`},
-	} {
-		if got, ok := parseWindowsHome(tc.in); !ok || got != tc.want {
-			t.Errorf("parseWindowsHome(%q) = %q, %v", tc.in, got, ok)
-		}
-	}
-	for _, bad := range [][]byte{utf16le("%USERPROFILE%\r\n"), []byte(`\\server\share`), nil, []byte(`D:\a\..\b`), []byte("D:\\a\x01b"), []byte("D:\\" + strings.Repeat("a", 4100))} {
-		if got, ok := parseWindowsHome(bad); ok {
-			t.Errorf("parseWindowsHome(%q) accepted %q", bad, got)
-		}
-	}
 }
 
 // fakeWindows wires the interop seams to a temp "drive" and records calls.
@@ -64,11 +45,11 @@ func fakeWindows(t *testing.T, homeOutput []byte, homeErr error) (home string, c
 	_ = os.MkdirAll(filepath.Dir(cmd), 0o755)
 	_ = os.WriteFile(cmd, nil, 0o755)
 	calls = &[]string{}
-	oldRun, oldLook := runInterop, lookPath
-	t.Cleanup(func() { runInterop, lookPath = oldRun, oldLook; resetWindowsHome() })
-	resetWindowsHome()
-	lookPath = func(string) (string, error) { return "", errors.New("appendWindowsPath=false") }
-	runInterop = func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
+	oldRun, oldLook := wslinterop.RunInterop, wslinterop.LookPath
+	t.Cleanup(func() { wslinterop.RunInterop, wslinterop.LookPath = oldRun, oldLook; wslinterop.ResetHome() })
+	wslinterop.ResetHome()
+	wslinterop.LookPath = func(string) (string, error) { return "", errors.New("appendWindowsPath=false") }
+	wslinterop.RunInterop = func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
 		*calls = append(*calls, dir+"|"+name+" "+strings.Join(args, " "))
 		switch {
 		case name == "wslpath" && args[1] == `C:\Windows\System32\cmd.exe`:
@@ -89,40 +70,6 @@ func bundle(t *testing.T) []byte {
 	srv := httptest.NewTLSServer(nil)
 	srv.Close()
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-}
-
-func TestWindowsHomeLookup(t *testing.T) {
-	home, calls := fakeWindows(t, utf16le("D:\\winhome\r\n"), nil)
-	linux, win, err := windowsHome(context.Background(), true)
-	if err != nil || linux != home || win != `D:\winhome` {
-		t.Fatalf("windowsHome = %q %q %v", linux, win, err)
-	}
-	cmdCall := (*calls)[1]
-	if !strings.HasSuffix(cmdCall, "cmd.exe /d /u /c echo %USERPROFILE%") || !strings.HasPrefix(cmdCall, filepath.Dir(strings.Fields(strings.SplitN(cmdCall, "|", 2)[1])[0])+"|") {
-		t.Fatalf("cmd.exe call %q", cmdCall)
-	}
-	if _, _, err = windowsHome(context.Background(), true); err != nil || len(*calls) != 3 {
-		t.Fatalf("success not cached: %d calls, %v", len(*calls), err)
-	}
-
-	_, calls = fakeWindows(t, nil, errors.New("exec format error"))
-	if _, _, err = windowsHome(context.Background(), false); !errors.Is(err, ErrNoWindowsHome) {
-		t.Fatalf("interop failure: %v", err)
-	}
-	n := len(*calls)
-	if _, _, err = windowsHome(context.Background(), false); !errors.Is(err, ErrNoWindowsHome) || len(*calls) != n {
-		t.Fatal("passive lookup retried a failure")
-	}
-	if _, _, _ = windowsHome(context.Background(), true); len(*calls) == n {
-		t.Fatal("explicit lookup did not retry")
-	}
-
-	home, _ = fakeWindows(t, []byte(`D:\winhome`), nil)
-	_ = os.Remove(home)
-	_ = os.WriteFile(home, nil, 0o644)
-	if _, _, err = windowsHome(context.Background(), true); !errors.Is(err, ErrNoWindowsHome) {
-		t.Fatalf("home that is a file: %v", err)
-	}
 }
 
 func TestExportCAToWindows(t *testing.T) {
