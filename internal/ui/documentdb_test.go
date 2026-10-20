@@ -13,6 +13,7 @@ import (
 
 	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/ThamalDilanka/easy-sso/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -130,21 +131,22 @@ func TestDocumentDBSubmitRejectsPostgresIAM(t *testing.T) {
 	}
 }
 
-func TestDocumentDBHidesIAMSetup(t *testing.T) {
+func TestDocumentDBOffersIAMSetup(t *testing.T) {
 	f := setupUI(t)
 	f.m.screen = databases
 	f.m.connections = []domain.Connection{docdbBookmark(f)}
-	noIAMControl := func(where string) {
+	iamControl := func(where string) {
 		t.Helper()
 		for _, c := range f.m.controls() {
-			if c.key == "l" {
-				t.Fatalf("%s offers %q", where, c.label)
+			if c.key == "l" && c.label == "Set up IAM" {
+				return
 			}
 		}
+		t.Fatalf("%s lacks the Set up IAM control: %+v", where, f.m.controls())
 	}
-	noIAMControl("databases list")
-	if hint := f.m.footer(); strings.Contains(hint, "IAM") {
-		t.Fatalf("footer hint offers IAM setup: %q", hint)
+	iamControl("databases list")
+	if hint := f.m.footer(); !strings.Contains(hint, "l: IAM setup") {
+		t.Fatalf("footer hint lacks IAM setup: %q", hint)
 	}
 	// l on DocumentDB opens the edit form switched to DocumentDB IAM login.
 	iamForm := func(where string) {
@@ -157,11 +159,14 @@ func TestDocumentDBHidesIAMSetup(t *testing.T) {
 	}
 	key(f.m, "l")
 	iamForm("list")
+	// The button runs the same handler as the key.
+	clickHit(f.m, mouseHit(t, f.m, "key", "l", 0))
+	iamForm("list click")
 	key(f.m, "v")
 	if f.m.review == nil || f.m.review.kind != "connection" {
 		t.Fatal("details review not open")
 	}
-	noIAMControl("connection review")
+	iamControl("connection review")
 	content := strings.Join(f.m.reviewContent(), "\n")
 	for _, want := range []string{"Engine", "DocumentDB", "Tunnel only · your DocumentDB user stays in your client"} {
 		if !strings.Contains(content, want) {
@@ -176,6 +181,9 @@ func TestDocumentDBHidesIAMSetup(t *testing.T) {
 	f.m.status = ""
 	key(f.m, "l")
 	iamForm("review")
+	key(f.m, "v")
+	clickHit(f.m, mouseHit(t, f.m, "key", "l", 0))
+	iamForm("review click")
 
 	// The list panel and the compact layout say the same.
 	for _, height := range []int{24, 40} {
@@ -1163,5 +1171,94 @@ func TestDocumentDBListeningSelectsOpenedBookmark(t *testing.T) {
 	}
 	if ts := f.m.targets(); ts[f.m.selectedRow].ID != "second" {
 		t.Fatalf("selected %q", ts[f.m.selectedRow].ID)
+	}
+}
+
+func docdbIAMBookmark(f fixture) domain.Connection {
+	c := docdbBookmark(f)
+	c.AuthMode, c.Database, c.DBUser = "docdb-iam", "app_db", ""
+	return c
+}
+
+func TestDocDBIAMConnectOpensTerminal(t *testing.T) {
+	for _, via := range []string{"key", "mouse"} {
+		t.Run(via, func(t *testing.T) {
+			f := setupUI(t)
+			activateOne(t, f)
+			c := docdbIAMBookmark(f)
+			f.m.screen, f.m.focus = databases, 1
+			f.conns.items = []domain.Connection{c}
+			finish(f.m, f.m.load())
+			f.sessions.clientState = "Connected"
+			f.m.services.Terminals = &testTerminals{frames: map[string]string{"run-1": "app_db> "}}
+			if controls := f.m.controls(); controls[0].label != "Connect terminal" || controls[0].key != "enter" {
+				t.Fatalf("primary action %+v", controls[0])
+			}
+			for _, c := range f.m.controls() {
+				if c.key == "l" {
+					t.Fatal("docdb-iam bookmark offers IAM setup again")
+				}
+			}
+			if hint := f.m.footer(); !strings.Contains(hint, "Enter: connect") || strings.Contains(hint, "open tunnel") || strings.Contains(hint, "IAM setup") {
+				t.Fatalf("footer %q", hint)
+			}
+			if via == "key" {
+				key(f.m, "enter")
+			} else {
+				clickHit(f.m, mouseHit(t, f.m, "key", "enter", 0))
+			}
+			if len(f.sessions.opened) != 1 || f.sessions.opened[0].AuthMode != "docdb-iam" {
+				t.Fatalf("opened %+v status %q", f.sessions.opened, f.m.status)
+			}
+			if len(f.m.terminalTabs) != 1 || f.m.terminalTabs[0].ID != "run-1" {
+				t.Fatalf("terminal not shown: tabs %+v status %q", f.m.terminalTabs, f.m.status)
+			}
+			if !strings.Contains(f.m.status, "Terminal connected") {
+				t.Fatalf("status %q", f.m.status)
+			}
+		})
+	}
+}
+
+func TestDocDBIAMDetailsShowRoleARN(t *testing.T) {
+	f := setupUI(t)
+	c := docdbIAMBookmark(f)
+	p, _ := f.m.profile()
+	id := domain.Identity{Account: p.AccountID, ARN: "arn:aws:sts::" + p.AccountID + ":assumed-role/AWSReservedSSO_ReadOnly_0123456789abcdef/dev", UserID: "id:dev"}
+	arn, err := profiles.IAMRoleARN(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := domain.Run{ID: "run-1", State: "Connected", Connection: c, Profile: p, Identity: id}
+	details := strings.Join(f.m.runDetails(run), "\n")
+	for _, want := range []string{"DocumentDB IAM · user is your role ARN", arn, "app_db"} {
+		if !strings.Contains(details, want) {
+			t.Fatalf("run details lack %q:\n%s", want, details)
+		}
+	}
+	if strings.Contains(details, id.ARN) {
+		// The session ARN is not the $external user name.
+		t.Fatalf("run details show the STS session ARN as the user:\n%s", details)
+	}
+	f.m.connectionReview(c)
+	content := strings.Join(f.m.reviewContent(), "\n")
+	for _, want := range []string{"DocumentDB IAM · user is your role ARN", "app_db"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("review lacks %q:\n%s", want, content)
+		}
+	}
+	for _, unwanted := range []string{"PostgreSQL IAM", "rds_iam", "your DocumentDB user stays in your client"} {
+		if strings.Contains(content, unwanted) {
+			t.Fatalf("review shows %q:\n%s", unwanted, content)
+		}
+	}
+	f.m.review = nil
+	f.m.screen = databases
+	f.m.connections = []domain.Connection{c}
+	for _, height := range []int{24, 40} {
+		f.m.height = height
+		if view := f.m.View(); !strings.Contains(view, "DocumentDB IAM") || strings.Contains(view, "PostgreSQL IAM") {
+			t.Fatalf("list panel at height %d:\n%s", height, view)
+		}
 	}
 }

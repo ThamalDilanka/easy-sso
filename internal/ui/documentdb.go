@@ -19,6 +19,9 @@ import (
 
 const documentDBLogin = "Tunnel only · your DocumentDB user stays in your client"
 
+// documentDBIAMLogin labels a docdb-iam bookmark: the $external user is the role ARN.
+const documentDBIAMLogin = "DocumentDB IAM · user is your role ARN"
+
 // Seams for platform-specific path rendering.
 var goos = runtime.GOOS
 var getenv = os.Getenv

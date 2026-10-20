@@ -121,6 +121,8 @@ type fakeSessions struct {
 	shutdowns                   int
 	fail                        error
 	connections                 *fakeConnections
+	// clientState is the state of a run with a database client; empty keeps Listening.
+	clientState string
 }
 
 func (f *fakeSessions) List() []domain.Run { return append([]domain.Run(nil), f.runs...) }
@@ -136,6 +138,9 @@ func (f *fakeSessions) Open(_ context.Context, c domain.Connection, r domain.Man
 	state := "Connected"
 	if c.Kind == "db" {
 		state = "Listening"
+	}
+	if c.DatabaseClient() && f.clientState != "" {
+		state = f.clientState
 	}
 	run := domain.Run{ID: fmt.Sprintf("run-%d", len(f.runs)+1), Connection: c, Profile: r.Profile, Alias: r.Alias, State: state, SessionID: "exact-session", Title: c.Name + " · selected account", StartedAt: time.Now()}
 	f.runs = append(f.runs, run)

@@ -265,7 +265,10 @@ func (m *Model) footer() string {
 			return "↑/↓: select | Enter: connect | v: details | n: new | e: edit" + common
 		}
 		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) && isDocumentDB(ts[m.selectedRow]) {
-			return "↑/↓: select | Enter: open tunnel | v: details | c: copy URL | n: new | e: edit" + common
+			if ts[m.selectedRow].DocDBIAM() {
+				return "↑/↓: select | Enter: connect | v: details | c: copy URL | n: new | e: edit" + common
+			}
+			return "↑/↓: select | Enter: open tunnel | v: details | c: copy URL | l: IAM setup | n: new | e: edit" + common
 		}
 		return "↑/↓: select | Enter: connect | v: details | l: IAM setup | n: new | e: edit" + common
 	case sessions, tunnels:

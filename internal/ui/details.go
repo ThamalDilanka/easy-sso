@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -132,6 +133,25 @@ func (m *Model) databaseTunnelHint(c domain.Connection) string {
 	}
 	return ""
 }
+
+// documentDBDatabase names the database mongosh opens; blank means its default.
+func documentDBDatabase(c domain.Connection) string {
+	if c.Database == "" {
+		return "(default: test)"
+	}
+	return c.Database
+}
+
+// runRoleARN is the $external user name: the role ARN of the run's own
+// verified identity, never the role selected in the workspace now.
+func runRoleARN(r domain.Run) string {
+	arn, err := profiles.IAMRoleARN(r.Identity)
+	if err != nil {
+		return "Unavailable for this identity"
+	}
+	return arn
+}
+
 func databaseLoginGuidance() []string {
 	return []string{
 		"Connect terminal generates the IAM token automatically; no token to copy.",
@@ -157,6 +177,8 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", localRoute(c)})
 		if c.IAMDatabase() {
 			fields = append(fields, [2]string{"Login", "PostgreSQL IAM"}, [2]string{"Database", c.Database}, [2]string{"DB user", c.DBUser})
+		} else if c.DocDBIAM() {
+			fields = append(fields, [2]string{"Login", documentDBIAMLogin}, [2]string{"Database", documentDBDatabase(c)})
 		} else if isDocumentDB(c) {
 			fields = append(fields, [2]string{"Login", documentDBLogin})
 		} else {
@@ -177,6 +199,8 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 			lines = append(lines, "p: edit local port")
 			if c.IAMDatabase() {
 				lines = append(lines, databaseLoginGuidance()...)
+			} else if c.DocDBIAM() {
+				lines = append(lines, "Connect terminal opens mongosh logged in with this role; no password.", "Admin setup: create your role ARN as a user in $external with mechanism MONGODB-AWS.")
 			} else if isDocumentDB(c) {
 				lines = append(lines, "Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.", "")
 				lines = append(lines, m.documentDBClient(c, m.documentDBPort(c))...)
@@ -229,6 +253,8 @@ func (m *Model) runDetails(r domain.Run) []string {
 		lines = append(lines, m.detailSection("ROUTE", [][2]string{{"Local", localRoute(r.Connection)}, {"Remote", fmt.Sprintf("%s:%d", r.Connection.Endpoint, r.Connection.DBPort)}, {"Relay", r.Connection.RelayInstanceID}, {"SSM region", r.Connection.RelayRegion}})...)
 		if r.Connection.IAMDatabase() {
 			lines = append(lines, m.detailRow("Database", r.Connection.Database), m.detailRow("DB user", r.Connection.DBUser), m.detailRow("Local tab", m.runTerminal(r)))
+		} else if r.Connection.DocDBIAM() {
+			lines = append(lines, m.detailRow("Login", documentDBIAMLogin), m.detailRow("Database", documentDBDatabase(r.Connection)), m.detailRow("DB user", runRoleARN(r)), m.detailRow("Local tab", m.runTerminal(r)))
 		}
 	} else {
 		lines = append(lines, m.detailRow("Instance", r.Connection.InstanceID), m.detailRow("Terminal", r.Title), m.detailRow("Local tab", m.runTerminal(r)))

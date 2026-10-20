@@ -206,7 +206,7 @@ func (m *Model) controls() []control {
 			return []control{{"RDS PostgreSQL", "p"}, {"DocumentDB", "d"}, {"Cancel", "esc"}}
 		case "connection":
 			label := "Connect terminal"
-			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() {
+			if m.review.connection.Kind == "db" && !m.review.connection.DatabaseClient() {
 				label = "Open tunnel"
 			}
 			c := []control{{label, "enter"}}
@@ -217,7 +217,7 @@ func (m *Model) controls() []control {
 			if isDocumentDB(m.review.connection) {
 				c = append(c, control{"Copy URL", "c"})
 			}
-			if m.review.connection.Kind == "db" && !m.review.connection.IAMDatabase() && !isDocumentDB(m.review.connection) {
+			if m.review.connection.Kind == "db" && !m.review.connection.DatabaseClient() {
 				c = append(c, control{"Set up IAM", "l"})
 			}
 			if m.review.duplicate {
@@ -252,14 +252,16 @@ func (m *Model) controls() []control {
 				c = append(c, control{"Connect terminal", "enter"}, control{"New window", "w"}, control{"Edit", "e"}, control{"Details", "v"})
 			} else {
 				label := "Connect terminal"
-				if !m.targets()[m.selectedRow].IAMDatabase() {
+				t := m.targets()[m.selectedRow]
+				if !t.DatabaseClient() {
 					label = "Open tunnel"
 				}
 				c = append(c, control{label, "enter"})
 				c = append(c, control{"Edit", "e"}, control{"Details", "v"})
-				if t := m.targets()[m.selectedRow]; !t.IAMDatabase() && !isDocumentDB(t) {
+				if !t.DatabaseClient() {
 					c = append(c, control{"Set up IAM", "l"})
-				} else if isDocumentDB(t) {
+				}
+				if isDocumentDB(t) {
 					c = append(c, control{"Copy URL", "c"})
 				}
 			}

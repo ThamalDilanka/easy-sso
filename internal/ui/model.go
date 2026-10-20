@@ -457,7 +457,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if x.epoch != m.epoch {
 			return m, m.afterOperation()
 		}
-		if x.action == "Open connection" && (x.run.Connection.Kind == "ec2" || x.run.Connection.IAMDatabase()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
+		if x.action == "Open connection" && (x.run.Connection.Kind == "ec2" || x.run.Connection.DatabaseClient()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
 			m.showTerminal(x.run)
 		}
 		if x.err != nil {
@@ -484,7 +484,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.review = nil
 			m.status = "Credentials republished: the profile entry is back in the AWS credentials file."
 		case "Open connection":
-			if (x.run.Connection.Kind == "ec2" || x.run.Connection.IAMDatabase()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
+			if (x.run.Connection.Kind == "ec2" || x.run.Connection.DatabaseClient()) && m.services.Terminals != nil && m.services.Terminals.Has(x.run.ID) {
 				m.pendingTarget = x.run.Connection.ID
 			}
 			m.review = nil

@@ -176,7 +176,7 @@ func (m *Model) terminalView() string {
 	}
 	p := m.palette()
 	ended := run.Connection.Kind == "ec2" && m.terminalEnded(run)
-	if (run.State == "Failed" || run.Connection.IAMDatabase()) && run.Error != "" {
+	if (run.State == "Failed" || run.Connection.DatabaseClient()) && run.Error != "" {
 		notice := wrapLines([]string{"Connection failed: " + run.Error}, max(1, m.width-4))
 		for _, line := range notice[:min(len(notice), max(1, m.height/3))] {
 			lines = append(lines, m.paint(padLine("  "+line, m.width), p.red, p.background, true))

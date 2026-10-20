@@ -518,7 +518,9 @@ func (m *Model) workspaceView() string {
 			details = append([]string{"", "Selected connection"}, details[2:]...)
 			if c.Kind == "db" {
 				login := "Tunnel only · Edit to enable PostgreSQL IAM"
-				if isDocumentDB(c) && !c.IAMDatabase() {
+				if c.DocDBIAM() {
+					login = documentDBIAMLogin
+				} else if isDocumentDB(c) && !c.IAMDatabase() {
 					login = documentDBLogin
 				}
 				if c.IAMDatabase() {
@@ -538,6 +540,8 @@ func (m *Model) workspaceView() string {
 					details = []string{"Selected connection: " + c.Name, "Database: " + c.Endpoint + " · " + c.Region, "Login: tunnel only (Edit to enable PostgreSQL IAM)"}
 					if c.IAMDatabase() {
 						details[2] = "PostgreSQL IAM: " + c.DBUser + " @ " + c.Database
+					} else if c.DocDBIAM() {
+						details[2] = "Login: " + documentDBIAMLogin
 					} else if isDocumentDB(c) {
 						details[2] = "DocumentDB client: DataGrip or any MongoDB client · c copies URL"
 					}

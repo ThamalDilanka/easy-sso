@@ -167,11 +167,7 @@ func TestActionGroupsFitAndRemainClickable(t *testing.T) {
 					details := mouseHit(t, m, "key", "v", 0)
 					if kind == "docdb" {
 						mouseHit(t, m, "key", "c", 0)
-						for _, h := range m.hits {
-							if h.action.kind == "key" && h.action.key == "l" {
-								t.Fatal("DocumentDB offers IAM setup")
-							}
-						}
+						mouseHit(t, m, "key", "l", 0)
 					}
 					if connect.y > edit.y || edit.y > details.y || (edit.y == details.y && edit.x >= details.x) {
 						t.Fatal("inconsistent action order")

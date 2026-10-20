@@ -76,7 +76,7 @@ func (m *Model) openMode(c domain.Connection, window bool) tea.Cmd {
 		run, err := open(ctx, c, role, snapshot)
 		return run, domain.ImportPlan{}, err
 	})
-	if (c.Kind == "ec2" || c.IAMDatabase()) && !window {
+	if (c.Kind == "ec2" || c.DatabaseClient()) && !window {
 		m.operationButton = "enter"
 	}
 	return cmd
@@ -118,7 +118,7 @@ func (m *Model) terminalHint(r domain.Run) string {
 		return "f: Focus terminal | Ctrl+]: AWS workspace | " + safe(r.Title)
 	}
 
-	if r.Connection.Kind == "db" && r.Connection.IAMDatabase() {
+	if r.Connection.Kind == "db" && r.Connection.DatabaseClient() {
 		return "No local database terminal. In Databases, Connect terminal starts or reuses a tunnel and signs in."
 	}
 	if r.Connection.Kind == "db" {

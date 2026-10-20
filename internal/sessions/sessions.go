@@ -78,6 +78,7 @@ type Manager struct {
 	runtimeMu            sync.Mutex
 	runs                 map[string]*entry
 	options              Options
+	verifyTLS            func(context.Context, int, string, string) error
 	terminalError        error
 	done                 chan struct{}
 	refreshDone          chan struct{}
@@ -95,7 +96,7 @@ func NewWithOptions(cli domain.SessionCLI, stateDir, executable string, connecti
 	if e := ipc.PrivateDir(dir); e != nil {
 		return nil, e
 	}
-	m := &Manager{cli: cli, stateDir: stateDir, executable: executable, connections: connections, runs: map[string]*entry{}, options: o, done: make(chan struct{}), refreshDone: make(chan struct{})}
+	m := &Manager{cli: cli, stateDir: stateDir, executable: executable, connections: connections, runs: map[string]*entry{}, options: o, verifyTLS: database.VerifyTLS, done: make(chan struct{}), refreshDone: make(chan struct{})}
 	if o.Terminal == nil {
 		m.options.Terminal, m.terminalError = terminal.Detect()
 	}
@@ -109,8 +110,23 @@ func NewWithOptions(cli domain.SessionCLI, stateDir, executable string, connecti
 		m.options.Probe = probeListener
 	}
 	m.recover()
+	// A crash can leave a private mongosh home behind; a recorded live run keeps its own.
+	database.SweepMongoHomes(stateDir, m.liveRun)
 	go m.refresh()
 	return m, nil
+}
+
+// liveRun reports whether a recorded run may still own local files.
+func (m *Manager) liveRun(id string) bool {
+	m.mu.Lock()
+	en, ok := m.runs[id]
+	m.mu.Unlock()
+	if !ok {
+		return false
+	}
+	en.mu.Lock()
+	defer en.mu.Unlock()
+	return en.run.State != "Stopped" && en.run.State != "Ended" && en.run.State != "Failed"
 }
 func (m *Manager) List() []domain.Run {
 	m.mu.Lock()
@@ -183,9 +199,6 @@ func (m *Manager) open(ctx context.Context, c domain.Connection, role domain.Man
 	if !connections.CompatibleRegion(c.Partition, c.Region) || (c.Kind == "db" && !connections.CompatibleRegion(c.Partition, c.RelayRegion)) {
 		return domain.Run{}, errors.New("connection region is incompatible with the selected AWS partition")
 	}
-	if c.DocDBIAM() {
-		return domain.Run{}, errors.New("DocumentDB IAM login is not available in this build")
-	}
 	if role.Status != "Active" && role.Status != "active" {
 		return domain.Run{}, errors.New("activate this role before connecting")
 	}
@@ -217,6 +230,15 @@ func (m *Manager) open(ctx context.Context, c domain.Connection, role domain.Man
 			return domain.Run{}, errors.New("IAM token signing unavailable")
 		}
 		clientPath, caPath, e = database.Prepare(ctx, c, m.stateDir)
+		if e != nil {
+			return domain.Run{}, e
+		}
+	} else if c.DocDBIAM() {
+		// mongosh reads the frozen keys from its environment; no token is signed.
+		if _, ok := adapter.(databaseTerminal); !ok {
+			return domain.Run{}, errors.New("DocumentDB IAM login needs Linux, macOS or WSL")
+		}
+		clientPath, caPath, e = database.PrepareMongo(ctx, c, m.stateDir)
 		if e != nil {
 			return domain.Run{}, e
 		}
@@ -264,7 +286,7 @@ func (m *Manager) open(ctx context.Context, c domain.Connection, role domain.Man
 		e = m.openShell(ctx, en, adapter)
 	} else {
 		e = m.openTunnel(ctx, en)
-		if c.IAMDatabase() {
+		if c.DatabaseClient() {
 			if e == nil {
 				e = m.openDatabaseClient(ctx, en, adapter.(databaseTerminal), clientPath, caPath)
 			} else {
@@ -361,7 +383,7 @@ func (m *Manager) openTunnel(ctx context.Context, en *entry) error {
 		}
 		if ready {
 			m.set(en, "Listening", "")
-			if frozen.Connection.IAMDatabase() {
+			if frozen.Connection.DatabaseClient() {
 				return nil
 			}
 			return m.save(en)
@@ -730,7 +752,7 @@ func (m *Manager) Recheck(ctx context.Context, id string) error {
 			m.set(en, "Unknown", "local listener not confirmed")
 			return errors.New("local listener not confirmed")
 		}
-		if frozen.Connection.IAMDatabase() {
+		if frozen.Connection.DatabaseClient() {
 			en.mu.Lock()
 			en.run.State = frozen.State
 			en.run.Error = frozen.Error
