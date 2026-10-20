@@ -145,6 +145,16 @@ type ImportPlan struct {
 	Fingerprint string
 	Unbound     []string
 }
+
+// SessionService runs and stops connections. A service may also offer these
+// optional interfaces, which the UI finds with a type assertion so it never
+// owns a launcher or a snapshot (Install is internal/launch.Install):
+//
+//	// ClientApps lists the DataGrip, then the Compass installs found.
+//	interface{ ClientApps(context.Context) ([]launch.Install, error) }
+//	// LaunchClientApp starts a client with the run's frozen role credentials
+//	// and returns their expiry. It can block about 3 s: call it in a tea.Cmd.
+//	interface{ LaunchClientApp(ctx context.Context, runID string, in launch.Install) (time.Time, error) }
 type SessionService interface {
 	List() []Run
 	Open(context.Context, Connection, ManagedRole, Snapshot) (Run, error)

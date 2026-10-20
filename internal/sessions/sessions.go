@@ -14,6 +14,7 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/ipc"
+	"github.com/ThamalDilanka/easy-sso/internal/launch"
 	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/ThamalDilanka/easy-sso/internal/store"
 	"github.com/ThamalDilanka/easy-sso/internal/terminal"
@@ -41,6 +42,8 @@ type Options struct {
 	Attempts            int
 	Interval            time.Duration
 	Probe               func(int, domain.Child) (bool, error)
+	// Launcher finds and starts DataGrip or Compass; nil selects launch.New().
+	Launcher launch.Launcher
 }
 type entry struct {
 	mu            sync.Mutex
@@ -79,6 +82,7 @@ type Manager struct {
 	runs                 map[string]*entry
 	options              Options
 	verifyTLS            func(context.Context, int, string, string) error
+	exportCA             func(context.Context, string, bool) (domain.CAExport, error)
 	terminalError        error
 	done                 chan struct{}
 	refreshDone          chan struct{}
@@ -96,7 +100,7 @@ func NewWithOptions(cli domain.SessionCLI, stateDir, executable string, connecti
 	if e := ipc.PrivateDir(dir); e != nil {
 		return nil, e
 	}
-	m := &Manager{cli: cli, stateDir: stateDir, executable: executable, connections: connections, runs: map[string]*entry{}, options: o, verifyTLS: database.VerifyTLS, done: make(chan struct{}), refreshDone: make(chan struct{})}
+	m := &Manager{cli: cli, stateDir: stateDir, executable: executable, connections: connections, runs: map[string]*entry{}, options: o, verifyTLS: database.VerifyTLS, exportCA: database.ExportCAToWindows, done: make(chan struct{}), refreshDone: make(chan struct{})}
 	if o.Terminal == nil {
 		m.options.Terminal, m.terminalError = terminal.Detect()
 	}
@@ -108,6 +112,9 @@ func NewWithOptions(cli domain.SessionCLI, stateDir, executable string, connecti
 	}
 	if m.options.Probe == nil {
 		m.options.Probe = probeListener
+	}
+	if m.options.Launcher == nil {
+		m.options.Launcher = launch.New()
 	}
 	m.recover()
 	// A crash can leave a private mongosh home behind; a recorded live run keeps its own.
