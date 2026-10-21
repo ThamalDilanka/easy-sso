@@ -53,7 +53,7 @@ Development screenshots and terminal recordings stay local under the ignored `do
 5. Use `3` for Sessions and `4` for Tunnels. Both list newest runs first; Sessions shows the latest 50 records and Tunnels keeps all records available. The selected run and bound profile stay above the table. `v` opens its full details at the top; `Esc` returns to the same list position. `Enter` focuses an existing terminal when available, otherwise opens the record details. `d` opens a targeted disconnect/stop review and `r` rechecks uncertain status. In EC2, **Connect terminal (Enter)** opens or focuses a named easy-sso tab alongside **[AWS] easy-sso**. While a new connection opens, the Connect terminal button shows an amber spinner, blocks repeat clicks, and keeps Cancel available. Click a tab or use **Shift+Tab** to switch; **Ctrl+]** returns to the AWS workspace with its account, view and server selection preserved. Each shell retains its screen and incomplete input independently of the selected profile. Each shell also keeps up to 5000 lines of earlier output: scroll it with the mouse wheel over the pane or **Alt+PgUp/PgDn**; the hint row shows how far back you are, and any key returns to live output. Inside a full-screen program such as `less` or `vim` the wheel and page keys go to the program instead. The tab strip has two rows of height; long strips scroll to keep the selected tab visible. Shell tabs show the tab strip, terminal area and keyboard shortcuts; failed startups also show a clear error banner. When the SSM client ends while a tab is open, for example after the Session Manager idle timeout or a dropped network link, the tab keeps its last screen under a **Session ended** banner, stops forwarding keys, and offers **Reconnect (r / Enter)**, which opens a replacement shell with the same frozen credentials and destination. Reconnect is refused once those credentials have expired; renew the role and connect again from EC2. If the replacement fails to start, its tab opens beside the ended one with the failure banner and the client's diagnostics. **Ctrl+W**, **Alt+W**, or the tab close button disconnects and closes the selected local shell. If local cleanup fails, its tab stays available with an error. Use shell `exit` or Sessions → Disconnect to end it. **New window (w)** explicitly starts an additional shell in a separate terminal window. **Details (v)** retains the full review and New shell action.
 6. Use `5` for Credentials, with an aligned profile/account/status/remaining-time table and full details for the selected row. The **PROFILE** column is the exact name to pass as `--profile` to the AWS CLI and SDKs; the details repeat it as `Use: --profile <name>`, and `c` copies it to the clipboard (only the name, never keys). Expiry countdowns update every second using Bubbles timers; dates use readable local time. Use `r` to renew, `d` to remove, `u` to unpublish or republish, and `R` to retry incomplete SSO cleanup. **Unpublish** takes the selected role's entry out of the AWS credentials file, so the profile name has no credentials behind it (`--profile <name>` fails with a missing-credentials error; the name itself stays listed) while its keys stay only in this app's memory; **Republish** puts the same entry back without a new sign-in. Exiting the app drops held keys, so an unpublished role still shows as unpublished after a restart and must be renewed. Unpublishing is hygiene for the shared credentials file, not a security boundary: processes running as your user can still read this app's memory, and already-open shells and tunnels keep their frozen credentials. While a role is unpublished or removed, new connections and shell reconnects with it are refused. Removal deletes owned local material; it does not revoke credential copies or established runs.
 7. Use `6` for Backup. `e` exports to a **new** file path. Existing files and reserved AWS/application paths are protected from overwrite. `i` validates an import, previews additions/conflicts, and preserves local records by default; replacement is explicit. Missing profile hints are marked as needing rebinding; select and review a valid matching account/role before connecting.
-8. `q` or `Ctrl+C` opens exit review. Normal exit disconnects embedded shells and stops owned DB tunnels; external window shells remain independent. While a terminal tab is selected, keys including Ctrl+C go to the shell, except the reserved tab shortcuts above; use Ctrl+] before workspace shortcuts. Embedded shells belong to this app process and cannot survive its exit.
+8. `q` or `Ctrl+C` opens exit review. Normal exit disconnects embedded shells and stops owned DB tunnels; external window shells remain independent. While a terminal tab is selected, keys including Ctrl+C go to the shell, except the reserved tab shortcuts above; use Ctrl+] before workspace shortcuts. Embedded shells belong to this app process and cannot survive its exit. On Linux, macOS and WSL, closing the terminal window that runs easysso runs the same cleanup, so owned tunnels end and their local ports are free again; native Windows is unchanged.
 
 Mouse clicks work on view tabs, account/profile rows, saved resources, action buttons, fields, role checkboxes, and cleanup acknowledgements. The wheel scrolls the panel under the pointer, including a shell tab's retained output. Clicking a resource selects it; Enter connects the selected EC2 or database bookmark. Use v to open details separately. Mouse release and drag events never submit an action. All keyboard controls remain available.
 
@@ -97,9 +97,9 @@ After a restart, Tunnels automatically checks older records using their original
 
 ## DocumentDB tunnels (DataGrip and other clients)
 
-Amazon DocumentDB bookmarks open a tunnel with your SSO credentials only. Your DocumentDB user and password stay in DataGrip or your other MongoDB client: easy-sso never asks for, copies or stores them, and its copied strings never contain a DocumentDB user name or password. The CA file it handles is the public AWS certificate bundle, not a secret.
+With Auth `tunnel`, Amazon DocumentDB bookmarks open a tunnel with your SSO credentials only. To log in with your role instead of a DocumentDB password, see [DocumentDB IAM login](#documentdb-iam-login-mongosh). In tunnel mode your DocumentDB user and password stay in DataGrip or your other MongoDB client: easy-sso never asks for, copies or stores them, and its copied strings never contain a DocumentDB user name or password. The CA file it handles is the public AWS certificate bundle, not a secret.
 
-An endpoint ending in `.docdb.amazonaws.com`, `.docdb.amazonaws.com.cn` or `.docdb-elastic.amazonaws.com` is treated as DocumentDB, and reviews show **Engine** `DocumentDB`. Choose **DocumentDB** in the database type picker for a new DocumentDB bookmark: its form asks for the **Cluster endpoint (host)**, defaults to DB port 27017, local port 37017 and Auth `tunnel`, and has no database username field. Auth accepts `tunnel` or `docdb-iam`; **Database (optional, IAM)** is used only for `docdb-iam`. The DocumentDB form refuses an endpoint that is not DocumentDB, and the RDS PostgreSQL form refuses a DocumentDB endpoint (`This is a DocumentDB endpoint. Press Esc, then n, and choose DocumentDB.`); leaving a DocumentDB endpoint in a new PostgreSQL form shows `DocumentDB endpoint: press Esc and choose DocumentDB for its defaults.` and changes no value. Editing a saved bookmark opens the form for its type. `postgres-iam` is refused for DocumentDB when saving, editing, connecting or importing (`PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel`), and `l` on a DocumentDB bookmark opens its edit form with Auth set to `docdb-iam`. DocumentDB bookmarks use the existing tunnel format; no new bookmark field is added.
+An endpoint ending in `.docdb.amazonaws.com`, `.docdb.amazonaws.com.cn` or `.docdb-elastic.amazonaws.com` is treated as DocumentDB, and reviews show **Engine** `DocumentDB`. Choose **DocumentDB** in the database type picker for a new DocumentDB bookmark: its form asks for the **Cluster endpoint (host)**, defaults to DB port 27017, local port 37017 and Auth `tunnel`, and has no database username field. Auth accepts `tunnel` or `docdb-iam`; **Database (optional, IAM)** is used only for `docdb-iam`. The DocumentDB form refuses an endpoint that is not DocumentDB, and the RDS PostgreSQL form refuses a DocumentDB endpoint (`This is a DocumentDB endpoint. Press Esc, then n, and choose DocumentDB.`); leaving a DocumentDB endpoint in a new PostgreSQL form shows `DocumentDB endpoint: press Esc and choose DocumentDB for its defaults.` and changes no value. Editing a saved bookmark opens the form for its type. The DocumentDB form takes only `tunnel` or `docdb-iam` (`Choose tunnel or docdb-iam for authentication.`). A DocumentDB bookmark with `postgres-iam`, for example from an imported file, is refused when saving, connecting or importing (`PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel`). `l` on a DocumentDB bookmark opens its edit form with Auth set to `docdb-iam`. DocumentDB bookmarks add no new field; `docdb-iam` is a new Auth value. **Older easy-sso releases (1.2.x and earlier) refuse to start while a `docdb-iam` bookmark exists.** To go back to one, first set Auth to `tunnel` on every `docdb-iam` bookmark.
 
 **Prerequisites:**
 
@@ -174,7 +174,7 @@ The status reads `Copied client URI with tlsCAFile <path>. In a shell, wrap it i
 
 ### WSL (Windows DataGrip, easysso in WSL)
 
-This setup follows Microsoft's WSL networking documentation; it has not yet been tested end to end on a live cluster.
+This setup has been tested end to end with Windows DataGrip and Compass and WSL mirrored networking. NAT mode follows Microsoft's WSL networking documentation.
 
 When easysso runs inside WSL and DataGrip runs on Windows, the tunnel listens on `127.0.0.1` inside WSL and DataGrip connects to the same `127.0.0.1:<port>` from Windows. Microsoft documents two ways this reaches Windows:
 
@@ -199,6 +199,86 @@ cp ~/.config/easy-sso/rds-ca-aws.pem /mnt/c/certs/
 A manual copy is not refreshed; repeat it after AWS changes the bundle. Prefer a folder inside your Windows profile; folders such as `C:\certs` may be writable by other local users.
 
 **Ports and firewall.** In NAT mode, easysso checks only Linux ports, so a Windows program already listening on the tunnel's local port is not detected, and DataGrip may reach that program instead. Pick another local port with `p` in the connection review or **Edit (e)**. Windows 11 22H2 and later with WSL 2.0.9 and later filter WSL traffic through the Hyper-V firewall. Loopback traffic between Windows and WSL is allowed by default, but managed laptops can change that; ask your IT team if Windows clients cannot connect while tools inside WSL can. See the [Hyper-V firewall](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/hyper-v-firewall).
+
+## DocumentDB IAM login (mongosh)
+
+A `docdb-iam` bookmark logs in to DocumentDB with your SSO role instead of a password. The DocumentDB user is the role ARN in the `$external` database, with the `MONGODB-AWS` mechanism. **Connect terminal (Enter)** opens the tunnel and an embedded `mongosh` tab that is already logged in. easy-sso never asks for a password, and no key or token appears in a bookmark, a command line, a copied string or the runtime records.
+
+Press `l` on a DocumentDB bookmark, or set **Auth** to `docdb-iam` in its form. **Database (optional, IAM)** is the database mongosh opens; leave it blank for `test`. It takes letters, digits, `_` and `-`. There is no username field: the role ARN is the user. Elastic clusters are refused (`Elastic clusters do not support IAM login; set Auth to tunnel`).
+
+**Prerequisites:**
+
+- `mongosh` 2.8.1 or later on your `PATH`. Earlier versions are refused (`mongosh 2.8.1 or later is required for IAM login`) because their bundled AWS SDK has a known flaw on the `MONGODB-AWS` path.
+- An instance-based DocumentDB 5.0 cluster. AWS documents IAM authentication for instance-based 5.0 clusters; elastic clusters do not support it, and the cluster's primary user cannot use it. See [DocumentDB IAM authentication](https://docs.aws.amazon.com/documentdb/latest/developerguide/iam-identity-auth.html).
+- The tunnel prerequisites from [DocumentDB tunnels](#documentdb-tunnels-datagrip-and-other-clients): relay, security group and SSM Agent.
+- The administrator maps your role ARN once in `$external`, with the database roles you should have. The connection review and the run details (`v`) show the command with your role ARN filled in:
+
+```text
+db.getSiblingDB("$external").runCommand({createUser: "arn:aws:iam::111122223333:role/<role name>", mechanisms: ["MONGODB-AWS"], roles: [{role: "read", db: "<db>"}]})
+```
+
+The user is the role ARN without a path, as STS reports it. For IAM Identity Center the role name looks like `AWSReservedSSO_<permission set>_<suffix>`. **The role ARN can change** when the permission set is provisioned to the account again, for example after it was removed and assigned again: the new role gets a new suffix, and logins fail until the administrator maps the new ARN. The details (`v`) show the ARN to map.
+
+**How it connects.** Before it opens SSM, easy-sso checks mongosh and the CA bundle. After the tunnel listens, it checks the cluster certificate and hostname through the tunnel, because mongosh connects to `127.0.0.1` and needs `--tlsAllowInvalidHostnames`. It then starts mongosh with the run's frozen role keys only in mongosh's environment. AWS settings from your shell, such as `AWS_PROFILE`, do not reach it. mongosh gets a private home folder under the application state folder with telemetry, logging, history, update checks and snippet downloads turned off; the folder is removed when mongosh exits. mongosh still reads a system-wide `mongosh.conf` if one exists. The run shows Connected only after mongosh reaches its logged-in prompt. In mongosh, `db.runCommand({connectionStatus:1})` proves the login: it lists your role ARN under `authenticatedUsers` with `db: '$external'`.
+
+Typical failures have fixed texts: `DocumentDB refused the IAM login; ask the admin to map your role ARN in $external (see v)` (role not mapped, or keys rejected), `The tunnel did not answer; check the relay`, and `Database TLS verification failed; check the real RDS endpoint and its CA bundle.`
+
+**Expiry.** DocumentDB checks the role keys when a connection opens. Open connections keep working after the keys expire, but new connections fail. To continue, renew the role in Credentials, close the mongosh tab (`exit` stops a tunnel opened for it) or stop the run in Tunnels, then connect again. A start with less than 30 seconds of credentials left is refused.
+
+**Copy keys.** On a `docdb-iam` bookmark or run, `c` copies the DataGrip URL and `C` copies the URI for mongosh, Compass and drivers. Neither carries a user, key or token:
+
+```text
+mongodb://127.0.0.1:37017/?directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true
+mongodb://127.0.0.1:37017/?tls=true&directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true&tlsCAFile=<encoded CA path>
+```
+
+A client needs the role keys in its own environment to use them; `g` starts DataGrip or Compass that way.
+
+**Platforms.** IAM login runs on Linux, macOS and WSL. Native Windows supports DocumentDB tunnels only and refuses `docdb-iam` with `DocumentDB IAM login needs Linux, macOS or WSL`; use a `tunnel` bookmark there.
+
+## Open DataGrip or Compass with your role
+
+`g` (or **Open client (g)**) starts DataGrip or MongoDB Compass with a connected `docdb-iam` run's frozen role keys in the client's environment. It works on the bookmark in Databases, in its connection review, on the run in Tunnels and in the run details. Without a connected run it says `No connected DocumentDB IAM run here. Connect the bookmark in Databases (Enter), then press g.`; on other bookmarks, `g starts DataGrip or Compass for DocumentDB IAM connections only.`
+
+The picker lists the clients it found: `d` starts DataGrip, `m` starts Compass, Enter starts the selected one. When it finds neither, Enter returns to the mongosh tab. On success the status reads `DataGrip started with role [<profile>] credentials until 15:04. It keeps them until it exits.`
+
+easy-sso looks in these places:
+
+| Platform | DataGrip | Compass |
+| --- | --- | --- |
+| Linux | `datagrip` or `datagrip.sh` on `PATH`, the Toolbox script `~/.local/share/JetBrains/Toolbox/scripts/datagrip`, `/opt/datagrip/bin/datagrip.sh`, `/snap/bin/datagrip` | `mongodb-compass` on `PATH`, `/usr/bin/mongodb-compass` |
+| macOS | `DataGrip.app` in `/Applications` or `~/Applications` | `MongoDB Compass.app` in `/Applications` or `~/Applications` |
+| Windows, from WSL | `%LOCALAPPDATA%\Programs\DataGrip\bin\datagrip64.exe`, else the newest `%ProgramFiles%\JetBrains\DataGrip*\bin\datagrip64.exe` | `%LOCALAPPDATA%\MongoDBCompass\MongoDBCompass.exe`, `%ProgramFiles%\MongoDB Compass\MongoDBCompass.exe` |
+
+The client runs directly, without a shell, `open` or `cmd.exe start`, in its own session, so it stays open after easysso exits. Its command line never holds a key: DataGrip gets no arguments, and Compass gets the IAM URI with the CA file and no user. `AWS_*` settings from your shell are replaced, and the client's AWS config and credentials files point at the null device, so no profile can override the run's keys. DataGrip's MongoDB driver reads AWS keys only from its environment, never from a profile or SSO, so an IAM data source works only in a DataGrip started with `g`.
+
+Before a start, easy-sso refuses with a fixed text when the role was removed or unpublished, when the run was recovered after a restart instead of opened by this easysso, or when less than 10 minutes of credentials are left (`Credentials expire at 15:04; renew the role and reconnect before launching a client`).
+
+**Close DataGrip before `g`.** DataGrip runs one copy per configuration. A second start hands its request to the copy that is already open, which never sees the new keys. easy-sso checks first and refuses with `Close DataGrip, then press g again.`; if it cannot check, it says `easy-sso could not check whether DataGrip is open. Close it, then press g again.` Compass has no such lock: each `g` starts another Compass.
+
+**DataGrip data source.** Create it once, then start DataGrip with `g` and connect:
+
+| Tab | Field | Value |
+| --- | --- | --- |
+| General | Connection type | **URL only** |
+| General | Authentication | **No auth** |
+| General | URL | press `c` in easy-sso and paste |
+| SSH/SSL | Use SSL | on |
+| SSH/SSL | CA file | the **CA file** row (on WSL, the Windows path from `x`) |
+| SSH/SSL | Mode | **Verify CA** |
+| SSH/SSL | Use SSH tunnel | off; easy-sso is the tunnel |
+
+The DataGrip URL has no `tls=true`; TLS comes from the SSL tab. Keep **URL only**: a data source with the usual host and port fields and No auth connects anonymously, so ping works but only the database `test` is listed. To check the login, run `db.runCommand({connectionStatus:1})` in a DataGrip console; it must show your role ARN under `$external`.
+
+**Compass.** `g` passes Compass the IAM URI with `tls=true` and `tlsCAFile`. Under WSL, a Windows Compass gets the Windows copy of the CA file, which easy-sso refreshes first (as `x` does).
+
+**Credentials stay in the client.** easy-sso does not own the client: it cannot renew its keys and does not close it on exit. The client keeps the keys until it exits. After they expire, open connections may keep working, but new connections fail. Then renew the role in Credentials, close the mongosh tab or stop the run in Tunnels, connect the bookmark again, close the client, and press `g`.
+
+**WSL.** A Windows client gets the keys through `WSLENV`, set fresh for that one start; your own `WSLENV` list does not reach it, and Windows `AWS_PROFILE` and `AWS_DEFAULT_PROFILE` are cleared for it. A client installed inside WSL is found only when WSLg is running (`DISPLAY` or `WAYLAND_DISPLAY` is set). When a client is found on both sides, easy-sso asks once: `w` for Windows, `l` for WSL. The choice is saved per client as `clientPlaces` in `settings.json` in the application state folder; remove that entry to be asked again. A Windows client reaches the tunnel on `127.0.0.1` through `localhostForwarding` (NAT mode) or mirrored networking, as described in [WSL](#wsl-windows-datagrip-easysso-in-wsl), and reads the Windows CA file from `x`.
+
+**Native Windows** does not start clients; use a `tunnel` bookmark and a DocumentDB password there.
+
+**Security: give DocumentDB logins their own permission set.** The client holds the role keys for its whole life, outside easy-sso's control. A DocumentDB IAM login itself needs no AWS permission: the cluster checks a signed `sts:GetCallerIdentity` request, which works even when a policy denies everything. So ask your administrator for permission sets used only for DocumentDB logins, named by scope and level, for example a read-only and a read-write DocumentDB login set, each mapped in `$external` with matching database roles. easy-sso opens the tunnel with the same role, so each set must allow exactly the Session Manager calls it makes: `ssm:StartSession` on the relay instance and the `AWS-StartPortForwardingSessionToRemoteHost` document, `ssm:TerminateSession` (you may limit it to the caller's own sessions) and `ssm:DescribeSessions`. Nothing else is needed; `sts:GetCallerIdentity` needs no permission. A plain `Deny *` would still allow the login, but easy-sso could not open the tunnel. If the set also carries broader policies, add an inline statement that denies every action except those three. Keys copied out of a client can then do little more than open a port forward through the relay. This policy has not yet been tested on a live cluster.
 
 ## Troubleshooting
 
@@ -243,3 +323,12 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 - **Elastic cluster, but a CA row is shown:** its host ends in `.docdb.amazonaws.com`, so easy-sso cannot tell it is elastic. Leave the CA file out and keep **Use SSL** on.
 - **`Could not copy (install xclip or wl-clipboard on Linux). …`:** install a clipboard tool, or select the URL line in the details by hand. That line is the DataGrip URL; for mongosh, Compass or drivers add `tls=true&tlsCAFile=<CA file row>` to it, as in the `C` example above. Under WSL, the copy keys need WSL interop.
 - **WSL: Windows DataGrip cannot connect or cannot read the CA file:** use `127.0.0.1`, press `x` and paste the Windows path into **CA file**, and check `localhostForwarding`, the local port and the firewall as described in [WSL](#wsl-windows-datagrip-easysso-in-wsl).
+
+### DocumentDB IAM login
+
+- **`DocumentDB refused the IAM login; ask the admin to map your role ARN in $external (see v)`:** the role ARN is not a `$external` user, or the keys were rejected. Compare the ARN in the details (`v`) with the mapped user; it changes when the permission set is provisioned again.
+- **`mongosh 2.8.1 or later is required for IAM login` or `MongoDB shell missing: …`:** install or update mongosh, then connect again.
+- **DataGrip connects but lists only `test`:** the data source is not **URL only** with **No auth**, so it connected anonymously. Fix the data source, start DataGrip with `g`, and check with `db.runCommand({connectionStatus:1})`.
+- **DataGrip fails with `userName='null'` or a request to `169.254.169.254`:** DataGrip was started without the role keys. Close it and start it with `g`.
+- **`Close DataGrip, then press g again.`:** DataGrip is already open (under WSL, on Windows). Close every DataGrip window, then press `g`.
+- **New connections fail after a while:** the client's keys expired. Renew the role, connect the bookmark again, close the client, and press `g`.

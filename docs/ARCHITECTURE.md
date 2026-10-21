@@ -14,8 +14,10 @@ The application uses Go and Bubble Tea. The official AWS CLI v2 and Session Mana
 | `internal/connections` | Validate bookmarks, persist successful connections, preview and merge imports |
 | `spec` | Single canonical JSON schema, embedded by bookmark validation and included in packages |
 | `internal/store` | Bounded reads, atomic private writes, ownership checks, settings transactions |
-| `internal/sessions` | Freeze run identity, correlate exact SSM sessions, verify listeners, stop and recover owned runs |
-| `internal/database` | PostgreSQL client setup, public AWS CA bundle download and 24-hour cache (shared with DocumentDB tunnels), CA export to `%USERPROFILE%\.easy-sso` under WSL, token redaction, authenticated prompt detection |
+| `internal/sessions` | Freeze run identity, correlate exact SSM sessions, verify listeners, stop and recover owned runs, start a database client with a run's frozen role |
+| `internal/database` | PostgreSQL and `mongosh` (DocumentDB IAM) client setup, mongosh version floor and private home, TLS check through the tunnel, public AWS CA bundle download and 24-hour cache (shared with DocumentDB tunnels), CA export to `%USERPROFILE%\.easy-sso` under WSL, token redaction, authenticated prompt detection |
+| `internal/launch` | Find DataGrip and MongoDB Compass (local, or Windows from WSL), check whether DataGrip is already open, start the client detached with role keys only in its environment |
+| `internal/wslinterop` | WSL detection and Windows interop helpers: `cmd.exe`, `wslpath`, Windows environment folders and the Windows profile folder |
 | `internal/process`, `internal/ipc` | Owned child processes and authenticated local helper communication |
 | `internal/terminal` | Embedded PTYs and platform-specific external window adapters |
 | `internal/ui` | State updates, contextual keyboard/mouse dispatch, shared controls and presentation |

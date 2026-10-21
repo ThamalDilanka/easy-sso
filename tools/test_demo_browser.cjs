@@ -232,6 +232,74 @@ const { chromium } = require(
     assert.equal(await field(7).inputValue(), "postgres-iam");
     await field(7).press("Escape");
 
+    // DocumentDB IAM: the IAM guide, a simulated mongosh login with the run's
+    // role, and g starting DataGrip or Compass from the client picker.
+    await reset("active");
+    await nav(1);
+    await pane.locator('[data-row="3"]').click();
+    await has(pane, "DocumentDB IAM · user is your role ARN");
+    await has(pane, "g starts one with the run's role");
+    assert.equal(await pane.locator('[data-key="l"]').count(), 0);
+    assert.equal(await pane.locator('[data-key="g"]').count(), 0);
+    await key("g");
+    await has(
+      status,
+      "No connected DocumentDB IAM run here. Connect the bookmark in Databases (Enter), then press g.",
+    );
+    await action("v");
+    await has(pane, "Connect terminal opens mongosh logged in with this role");
+    await has(pane, "DATAGRIP OR COMPASS (IAM LOGIN)");
+    await has(pane, "URL only, Authentication No auth, then g to start it");
+    await has(pane, "arn:aws:iam::111111111111:role/ReadOnlyAccess");
+    await has(
+      pane,
+      "mongodb://127.0.0.1:37018/?directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true",
+    );
+    await has(pane, 'mechanisms: ["MONGODB-AWS"]');
+    await has(pane, "Login proof: db.runCommand({connectionStatus:1})");
+    assert.ok(!(await pane.innerText()).includes("User & Password"));
+    await action("c");
+    await has(
+      status,
+      "Copied DataGrip URL for 127.0.0.1:37018 (simulated). Data source: URL only, Authentication No auth",
+    );
+    await key("C");
+    await has(status, "Copied client URI with tlsCAFile");
+    await action("enter");
+    await page.locator("#command").waitFor();
+    await has(page.locator("#terminal-output"), "Simulated mongosh");
+    await page
+      .locator("#command")
+      .fill("db.runCommand({connectionStatus:1})");
+    await page.locator("#command").press("Enter");
+    await has(
+      page.locator("#terminal-output"),
+      "user: 'arn:aws:iam::111111111111:role/ReadOnlyAccess', db: '$external'",
+    );
+    await workspace();
+    await has(status, "Terminal connected. Ctrl+] returns to the AWS workspace.");
+    await action("g");
+    await has(pane, "START A DATABASE CLIENT");
+    await has(pane, "DataGrip (d)");
+    await has(pane, "MongoDB Compass (m)");
+    await has(pane, "keeps them until it exits");
+    await key("m");
+    await has(status, "MongoDB Compass started with role [default] credentials until ");
+    await has(status, "It keeps them until it exits.");
+    await nav(3);
+    await has(pane, "127.0.0.1:37018");
+    await action("g");
+    await has(pane, "START A DATABASE CLIENT");
+    await action("d");
+    await has(status, "DataGrip started with role [default] credentials until ");
+    await nav(1);
+    await pane.locator('[data-row="2"]').click();
+    await key("g");
+    await has(
+      status,
+      "g starts DataGrip or Compass for DocumentDB IAM connections only.",
+    );
+
     // Multi-role activation requires acknowledgement; renew retains alias.
     await reset();
     await page.locator(".shortcut-buttons [data-key=A]").click();
@@ -288,7 +356,7 @@ const { chromium } = require(
     await action("i");
     await field(0).fill("demo/exported-bookmarks.json");
     await field(0).press("Enter");
-    await has(pane, "Additions: 0 | Conflicts: 8");
+    await has(pane, "Additions: 0 | Conflicts: 9");
 
     // Selecting a scenario only applies on reset; failures and retry are usable.
     await page.locator("#scenario").selectOption("expired");
@@ -328,6 +396,7 @@ const { chromium } = require(
 
     await key("?");
     await has(pane, "Keyboard help");
+    await has(pane, "start DataGrip or MongoDB Compass");
     await key("Escape");
     await page.locator("#theme").click();
     assert.equal(

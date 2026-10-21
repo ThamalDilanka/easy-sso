@@ -12,6 +12,7 @@ _Click the screenshot to open the interactive demo._
 - Reconnect to saved EC2 instances through AWS Systems Manager Session Manager.
 - Open database tunnels and PostgreSQL IAM terminals with hostname-verified TLS.
 - Open Amazon DocumentDB tunnels for DataGrip or any MongoDB client, with copyable connection settings and the public AWS certificate bundle; your DocumentDB user stays in your client.
+- Log in to DocumentDB with your SSO role instead of a password (DocumentDB IAM): in an embedded `mongosh`, or by starting DataGrip or MongoDB Compass with that role.
 - Inspect and stop individual sessions or tunnels, and export connection bookmarks without credentials.
 
 Built on the official **AWS CLI v2** and **Session Manager plugin**, with no background credential renewal or telemetry. You use your own AWS profiles and permissions; easy-sso does not grant access or configure your AWS resources.
@@ -37,7 +38,7 @@ interactive workflows.
 
 ### 1. Install the prerequisites
 
-Install [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html). Install `psql` as well if you want PostgreSQL IAM terminals on Linux, WSL, or macOS. For DocumentDB tunnels, bring DataGrip or your own MongoDB client.
+Install [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html). Install `psql` as well if you want PostgreSQL IAM terminals on Linux, WSL, or macOS. For DocumentDB tunnels, bring DataGrip or your own MongoDB client. DocumentDB IAM login needs `mongosh` 2.8.1 or later.
 
 For WSL, install these tools inside your Linux distribution. Native Windows uses Windows Terminal for external EC2 shell windows and supports database tunnels; embedded PostgreSQL terminals are available on Linux, WSL, and macOS. With easysso in WSL, DataGrip on Windows can use the WSL tunnel; see [WSL and DocumentDB](docs/USAGE.md#wsl-windows-datagrip-easysso-in-wsl).
 

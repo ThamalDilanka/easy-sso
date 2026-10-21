@@ -688,6 +688,14 @@
             DataGrip URL / the client URI; the demo never uses your clipboard.
           </p>
           <p>
+            Example DocumentDB IAM logs in with your role instead of a password.
+            Connect terminal opens a simulated mongosh; type
+            <code>db.runCommand({connectionStatus:1})</code> to see the role
+            ARN as the <code>$external</code> user. Back in the workspace,
+            <code>g</code> simulates starting DataGrip or MongoDB Compass with
+            that run's role credentials.
+          </p>
+          <p>
             Backup uses virtual files in memory. Import
             <code>demo/bookmarks-backup.json</code> to preview an addition and a
             conflict. Export to a new virtual filename, then import it. No files
@@ -824,6 +832,23 @@
           relayRegion: "us-east-1",
           auth: "tunnel",
           database: "",
+          dbUser: "",
+          ca: "",
+        },
+        {
+          id: "demo-docdb-iam",
+          kind: "db",
+          name: "Example DocumentDB IAM",
+          account: "111111111111",
+          region: "us-east-1",
+          endpoint:
+            "example-cluster.cluster-c0example.us-east-1.docdb.amazonaws.com",
+          dbPort: "27017",
+          localPort: "37018",
+          relay: "i-0123456789abcdef0",
+          relayRegion: "us-east-1",
+          auth: "docdb-iam",
+          database: "example",
           dbUser: "",
           ca: "",
         },
@@ -1133,7 +1158,7 @@
                 c.relay,
                 c.relayRegion,
                 c.auth,
-                c.auth === "postgres-iam" ? c.database : "",
+                c.auth === "tunnel" ? "" : c.database,
                 c.auth === "postgres-iam" ? c.dbUser : "",
               ],
         );
@@ -1179,8 +1204,43 @@
           "/?directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true"
         );
       }
+      // docdb-iam logs in as the role ARN in $external; a URL never carries
+      // a user, key or token.
+      const documentDBIAMLogin = "DocumentDB IAM · user is your role ARN";
+      function dataGripIAMURL(port) {
+        return (
+          "mongodb://127.0.0.1:" +
+          port +
+          "/?directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true"
+        );
+      }
+      // The $external user: the path-less IAM role ARN of a profile's role.
+      function roleARN(p) {
+        return "arn:" + p.partition + ":iam::" + p.account + ":role/" + p.role;
+      }
+      function documentDBDatabase(c) {
+        return c.database || "(default: test)";
+      }
+      // The newest live docdb-iam run of bookmark c: same route and database.
+      function iamRun(c) {
+        return state.runs
+          .slice()
+          .reverse()
+          .find(
+            (r) =>
+              r.connection.auth === "docdb-iam" &&
+              activeTunnel(r) &&
+              routeKey(r.connection) === routeKey(c) &&
+              (r.connection.database || "") === (c.database || ""),
+          );
+      }
       // The port of an open tunnel on the same route, else the bookmark's own.
+      // A docdb-iam bookmark uses its own live run.
       function documentDBPort(c) {
+        if (c.auth === "docdb-iam") {
+          const own = iamRun(c);
+          return own ? own.connection.localPort : c.localPort;
+        }
         const run = state.runs
           .slice()
           .reverse()
@@ -1222,7 +1282,13 @@
         const target = documentDBTarget();
         if (!target) return false;
         const elastic = isDocumentDBElastic(target.c);
-        if (key === "c")
+        if (key === "c" && target.c.auth === "docdb-iam")
+          note(
+            "Copied DataGrip URL for 127.0.0.1:" +
+              target.port +
+              " (simulated). Data source: URL only, Authentication No auth, Use SSL with the CA file; g starts DataGrip.",
+          );
+        else if (key === "c")
           note(
             "Copied DataGrip URL for 127.0.0.1:" +
               target.port +
@@ -1244,6 +1310,87 @@
           );
         }
         return true;
+      }
+      // g mirrors launchTarget/launchKey in internal/ui/documentdb.go. The
+      // demo finds both clients on "this machine" and starts nothing.
+      const launchNoRun =
+        "No connected DocumentDB IAM run here. Connect the bookmark in Databases (Enter), then press g.";
+      const launchNotIAM =
+        "g starts DataGrip or Compass for DocumentDB IAM connections only.";
+      const clientApps = [
+        ["DataGrip", "d"],
+        ["MongoDB Compass", "m"],
+      ];
+      function launchTarget() {
+        const fromBookmark = (c) => {
+          if (!c || c.kind !== "db") return {};
+          if (c.auth !== "docdb-iam") return { status: launchNotIAM };
+          const run = iamRun(c);
+          return run ? { run } : { status: launchNoRun };
+        };
+        const fromRun = (r) => {
+          if (!r || r.connection.kind !== "db") return {};
+          if (r.connection.auth !== "docdb-iam") return { status: launchNotIAM };
+          return activeTunnel(r) ? { run: r } : { status: launchNoRun };
+        };
+        const r = state.review;
+        if (r) {
+          if (r.kind === "connection") return fromBookmark(r.connection);
+          return r.kind === "run" ? fromRun(r.run) : {};
+        }
+        if (state.view === 1) return fromBookmark(selected());
+        return state.view === 3 ? fromRun(selected()) : {};
+      }
+      function canLaunch() {
+        return !!launchTarget().run;
+      }
+      function launchKey() {
+        const target = launchTarget();
+        if (!target.run) {
+          if (target.status) note(target.status);
+          return;
+        }
+        state.review = { kind: "client-app", run: target.run, choice: 0 };
+        state.notice = "";
+        render();
+      }
+      function clock(ms) {
+        const d = new Date(ms);
+        return (
+          String(d.getHours()).padStart(2, "0") +
+          ":" +
+          String(d.getMinutes()).padStart(2, "0")
+        );
+      }
+      // The real client gets the run's frozen role keys in its environment
+      // only; the demo only reports what would happen.
+      function startClient(name) {
+        const run = state.review.run;
+        state.review = null;
+        if (run.expires - Date.now() < 10 * 60 * 1000)
+          return note(
+            "Credentials expire at " +
+              clock(run.expires) +
+              "; renew the role and reconnect before launching a client",
+          );
+        note(
+          name +
+            " started with role [" +
+            run.profile.name +
+            "] credentials until " +
+            clock(run.expires) +
+            ". It keeps them until it exits. (Simulated)",
+        );
+      }
+      function clientAppKey(key) {
+        const r = state.review;
+        if (["up", "k"].includes(key)) r.choice = 0;
+        else if (["down", "j"].includes(key)) r.choice = 1;
+        else if (key === "d") return startClient("DataGrip");
+        else if (key === "m") return startClient("MongoDB Compass");
+        else if (key === "enter") return startClient(clientApps[r.choice][0]);
+        else return;
+        render();
       }
       function validate(c) {
         if (!c.name?.trim() || !/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(c.region))
@@ -1294,6 +1441,10 @@
             return "Choose postgres-iam or tunnel for authentication.";
           if (c.auth === "docdb-iam" && !isDocumentDB(c))
             return "DocumentDB IAM login needs a DocumentDB endpoint; set Auth to tunnel";
+          if (c.auth === "docdb-iam" && isDocumentDBElastic(c))
+            return "Elastic clusters do not support IAM login; set Auth to tunnel";
+          if (c.auth === "docdb-iam" && !/^[A-Za-z0-9_-]*$/.test(c.database))
+            return "DocumentDB database name may use only letters, digits, _ and -";
           if (c.auth === "postgres-iam" && isDocumentDB(c))
             return "PostgreSQL IAM login does not apply to DocumentDB; set Auth to tunnel";
           if (
@@ -1334,8 +1485,6 @@
           );
         const error = validate(c);
         if (error) return note(error);
-        if (c.auth === "docdb-iam")
-          return note("DocumentDB IAM login is not available in this build");
         const duplicate = state.runs.find(
           (r) =>
             isLive(r) &&
@@ -1394,13 +1543,15 @@
             };
             state.runs.push(run);
           }
-          if (c.kind === "ec2" || c.auth === "postgres-iam") {
+          if (c.kind === "ec2" || c.auth !== "tunnel") {
             if (!state.tabs.includes(run.id)) {
               state.tabs.push(run.id);
               run.lines = [
                 c.kind === "ec2"
                   ? "Simulated SSM shell. Type help for supported commands."
-                  : "Simulated PostgreSQL IAM terminal. Type help for supported commands.",
+                  : c.auth === "docdb-iam"
+                    ? "Simulated mongosh, logged in with the role ARN in $external (MONGODB-AWS). Type help for supported commands."
+                    : "Simulated PostgreSQL IAM terminal. Type help for supported commands.",
                 "No commands are executed on your computer or AWS.",
                 "",
               ];
@@ -1819,11 +1970,36 @@
       function terminalCommand(run, command) {
         run.lines.push("example> " + command);
         const c = run.connection;
+        const mongo = c.auth === "docdb-iam";
         const results = {
-          help: [
-            "help · whoami · hostname · pwd · aws sts get-caller-identity",
-            "select current_user; · select 1; · \\conninfo · clear · exit / \\q",
-          ],
+          help: mongo
+            ? [
+                "db.runCommand({connectionStatus:1}) · db.getName() · show dbs · clear · exit / quit",
+              ]
+            : [
+                "help · whoami · hostname · pwd · aws sts get-caller-identity",
+                "select current_user; · select 1; · \\conninfo · clear · exit / \\q",
+              ],
+          ...(mongo
+            ? {
+                // Login proof: the role ARN is the $external user.
+                "db.runCommand({connectionStatus:1})": [
+                  "{",
+                  "  authInfo: {",
+                  "    authenticatedUsers: [",
+                  "      { user: '" + roleARN(run.profile) + "', db: '$external' }",
+                  "    ],",
+                  "    authenticatedUserRoles: [ { role: 'read', db: '" +
+                    (c.database || "test") +
+                    "' } ]",
+                  "  },",
+                  "  ok: 1",
+                  "}",
+                ],
+                "db.getName()": [c.database || "test"],
+                "show dbs": [(c.database || "test") + "  (simulated)"],
+              }
+            : {}),
           whoami: ["example-user"],
           hostname: ["host.example.invalid"],
           pwd: ["/demo"],
@@ -1841,7 +2017,11 @@
               " (simulated TLS).",
           ],
         };
-        if (command === "exit" || command === "\\q") {
+        if (
+          command === "exit" ||
+          command === "\\q" ||
+          (mongo && command === "quit")
+        ) {
           run.status = "Ended";
           state.tabs = state.tabs.filter((id) => id !== run.id);
           state.tab = null;
@@ -1977,7 +2157,10 @@
             else if (key === "d") newDatabaseForm("documentdb");
             else if (key === "enter")
               newDatabaseForm(r.choice ? "documentdb" : "postgres");
-          } else if (key === "enter") confirmReview();
+          } else if (r.kind === "client-app") clientAppKey(key);
+          else if (key === "g" && ["connection", "run"].includes(r.kind))
+            launchKey();
+          else if (key === "enter") confirmReview();
           else if (key === "c" && r.kind === "exit") finishExit(true);
           else if (
             (key === "c" || key === "C") &&
@@ -2105,6 +2288,7 @@
           return;
         }
         if ((key === "c" || key === "C") && copyDocumentDBKey(key)) return;
+        if (key === "g") return launchKey();
         if (key === "v") return details();
         if (key === "n" && state.view < 2) return newForm();
         if (key === "e" && state.view < 2 && selected())
@@ -2214,9 +2398,11 @@
               "Login",
               c.auth === "postgres-iam"
                 ? c.dbUser + " @ " + c.database + " · PostgreSQL IAM"
-                : isDocumentDB(c)
-                  ? documentDBLogin
-                  : "Tunnel only · Edit to enable PostgreSQL IAM",
+                : c.auth === "docdb-iam"
+                  ? documentDBIAMLogin
+                  : isDocumentDB(c)
+                    ? documentDBLogin
+                    : "Tunnel only · Edit to enable PostgreSQL IAM",
             ],
             [
               "Route",
@@ -2228,9 +2414,16 @@
                 " · " +
                 c.region,
             ],
-            ...(isDocumentDB(c)
-              ? [["Client", "DataGrip / any MongoDB client · c copies URL"]]
-              : []),
+            ...(c.auth === "docdb-iam"
+              ? [
+                  [
+                    "Client",
+                    "DataGrip / Compass · g starts one with the run's role · c copies URL",
+                  ],
+                ]
+              : isDocumentDB(c)
+                ? [["Client", "DataGrip / any MongoDB client · c copies URL"]]
+                : []),
           ];
         return [
           ["Name", c.name],
@@ -2244,16 +2437,20 @@
             "Login",
             c.auth === "postgres-iam"
               ? "PostgreSQL IAM"
-              : isDocumentDB(c)
-                ? documentDBLogin
-                : "Tunnel only",
+              : c.auth === "docdb-iam"
+                ? documentDBIAMLogin
+                : isDocumentDB(c)
+                  ? documentDBLogin
+                  : "Tunnel only",
           ],
-          ...(isDocumentDB(c) && c.auth !== "postgres-iam"
-            ? []
-            : [
-                ["Database", c.database],
-                ["DB user", c.dbUser],
-              ]),
+          ...(c.auth === "docdb-iam"
+            ? [["Database", documentDBDatabase(c)]]
+            : isDocumentDB(c) && c.auth !== "postgres-iam"
+              ? []
+              : [
+                  ["Database", c.database],
+                  ["DB user", c.dbUser],
+                ]),
         ];
       }
       // The DataGrip-first connection guide; it never shows a database user.
@@ -2300,6 +2497,53 @@
           `<p class="notice">URL (c copies):<br><code class="client-url">${esc(dataGripURL(port))}</code><br>${notes.map(esc).join("<br>")}</p>`
         );
       }
+      // The docdb-iam guide: DataGrip with a URL-only data source and no auth,
+      // the role ARN as the $external user. It never shows a key.
+      function documentDBIAMClientHTML(c, port, user, arn) {
+        const ca = c.ca
+          ? c.ca + " (your RDS CA file)"
+          : demoCAPath +
+            (state.caCached ? " (cached)" : " (downloads when the tunnel opens)");
+        const notes = [
+          "With Verify CA and the CA file, DataGrip checks the certificate chain; the hostname check is off because the route is 127.0.0.1.",
+        ];
+        if (c.endpoint.toLowerCase().includes(".cluster-ro-"))
+          notes.push(
+            "Reader endpoint: read-only for every user; use the cluster endpoint to write.",
+          );
+        const admin = [
+          "Admin setup, once per role (an admin user runs it in mongosh):",
+          'db.getSiblingDB("$external").runCommand({createUser: "' +
+            (arn || "<role ARN>") +
+            '", mechanisms: ["MONGODB-AWS"], roles: [{role: "read", db: "' +
+            (c.database || "<db>") +
+            '"}]})',
+          "5.0 instance-based; not elastic; never the primary user.",
+          "Login proof: db.runCommand({connectionStatus:1}) must show your role ARN.",
+        ];
+        return (
+          section("DATAGRIP OR COMPASS (IAM LOGIN)", [
+            ["Login", "IAM (MONGODB-AWS), no password"],
+            ["DB user", user],
+            ["DataGrip", "URL only, Authentication No auth, then g to start it"],
+            [
+              "SSH/SSL",
+              "Use SSL on · CA file below · Mode Verify CA · SSH tunnel off",
+            ],
+            ["CA file", ca],
+            [
+              "Admin",
+              "createUser in $external with mechanisms MONGODB-AWS (v shows the command)",
+            ],
+            [
+              "Other clients",
+              "g starts Compass too · C copies URI for mongosh/Compass/drivers",
+            ],
+          ]) +
+          `<p class="notice">URL (c copies):<br><code class="client-url">${esc(dataGripIAMURL(port))}</code><br>${notes.map(esc).join("<br>")}</p>` +
+          `<p class="notice">${admin.map(esc).join("<br>")}</p>`
+        );
+      }
       function identityRows(p) {
         return [
           ["Account", p.account],
@@ -2319,10 +2563,20 @@
             ["Started", new Date(r.started).toLocaleString()],
             ["SSM session", "example-session-" + r.id],
             ["Managed alias", r.alias],
+            ...(r.connection.auth === "docdb-iam"
+              ? [["DB user", roleARN(r.profile)]]
+              : []),
           ]) +
           section("CONNECTION", connectionRows(r.connection)) +
           (isDocumentDB(r.connection) && activeTunnel(r)
-            ? documentDBClientHTML(r.connection, r.connection.localPort)
+            ? r.connection.auth === "docdb-iam"
+              ? documentDBIAMClientHTML(
+                  r.connection,
+                  r.connection.localPort,
+                  roleARN(r.profile),
+                  roleARN(r.profile),
+                )
+              : documentDBClientHTML(r.connection, r.connection.localPort)
             : "")
         );
       }
@@ -2422,7 +2676,22 @@
           body =
             section("CONNECTION", connectionRows(r.connection)) +
             section("IDENTITY", identityRows(currentProfile()));
-          if (isDocumentDB(r.connection) && r.connection.auth !== "postgres-iam")
+          if (r.connection.auth === "docdb-iam") {
+            // A bookmark review has no run yet: the selected profile's active
+            // role is the user its next connection logs in as.
+            const arn = activeRole() ? roleARN(currentProfile()) : "";
+            body +=
+              '<p class="notice">p: edit local port<br>Connect terminal opens mongosh logged in with this role; no password.</p>' +
+              documentDBIAMClientHTML(
+                r.connection,
+                documentDBPort(r.connection),
+                arn || "Log in to resolve your role ARN",
+                arn,
+              );
+          } else if (
+            isDocumentDB(r.connection) &&
+            r.connection.auth !== "postgres-iam"
+          )
             body +=
               '<p class="notice">p: edit local port<br>Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.</p>' +
               documentDBClientHTML(r.connection, documentDBPort(r.connection));
@@ -2437,6 +2706,7 @@
               "enter",
               "primary",
             ) +
+            (canLaunch() ? button("Open client", "g") : "") +
             (r.connection.kind === "ec2" ? button("New window", "w") : "") +
             button("Edit", "e");
           if (isDocumentDB(r.connection)) controls += button("Copy URL", "c");
@@ -2468,11 +2738,28 @@
               (state.tabs.includes(r.run.id)
                 ? button("Focus terminal", "enter", "primary")
                 : "") +
+              (canLaunch() ? button("Open client", "g") : "") +
               button("Disconnect / stop", "d", "danger") +
               button("Recheck", "r") +
               (isDocumentDB(r.run.connection) && activeTunnel(r.run)
                 ? button("Copy URL", "c")
                 : "");
+        } else if (r.kind === "client-app") {
+          title = "Start a database client";
+          body =
+            section("START A DATABASE CLIENT", [
+              ["Run", r.run.connection.name],
+              ["Profile", r.run.profile.name],
+              ["Local route", "127.0.0.1:" + r.run.connection.localPort],
+            ]) +
+            clientApps
+              .map(
+                ([label, key], i) =>
+                  `<p>${r.choice === i ? "&gt; " : ""}${button(label, key, r.choice === i ? "primary" : "")} · this machine</p>`,
+              )
+              .join("") +
+            "<p class=\"notice\">The client gets this run's role keys in its environment only and keeps them until it exits.<br>Under WSL, a client found on Windows and in WSL asks once where to start. (Simulated: nothing starts.)</p>";
+          controls = clientApps.map(([label, key]) => button(label, key)).join("");
         } else if (["role", "remove"].includes(r.kind)) {
           title = "Details / Credentials";
           body = roleDetails(r.role);
@@ -2530,7 +2817,14 @@
             ],
             ["v", "Connection details."],
             ["n / e", "New connection / edit selected connection."],
-            ["l", "Set up database IAM login."],
+            [
+              "l",
+              "PostgreSQL: set up database IAM login. DocumentDB: switch the bookmark to docdb-iam.",
+            ],
+            [
+              "g",
+              "DocumentDB IAM with a connected run: start DataGrip or MongoDB Compass with that run's role credentials. The client keeps them until it exits.",
+            ],
             [
               "c / C",
               "DocumentDB: copy the DataGrip URL / the URI with tlsCAFile for mongosh, Compass and drivers. No user or password is copied.",
@@ -2551,6 +2845,10 @@
               "c / C",
               "Open DocumentDB tunnel: copy the DataGrip URL / client URI.",
             ],
+            [
+              "g",
+              "Connected DocumentDB IAM run: start DataGrip or MongoDB Compass with its role credentials.",
+            ],
           ],
         ],
         [
@@ -2563,6 +2861,10 @@
             ["Esc", "Cancel; new connection drafts are retained."],
             ["e / i", "In Backup: export / import virtual file."],
             ["Space", "In import review: toggle conflict replacement."],
+            [
+              "d / m",
+              "In the client picker: DataGrip / MongoDB Compass.",
+            ],
           ],
         ],
         [
@@ -2638,7 +2940,8 @@
               ) +
                 (item.kind === "ec2"
                   ? button("New window", "w", "primary")
-                  : ""),
+                  : "") +
+                (canLaunch() ? button("Open client", "g") : ""),
               button("Edit", "e") +
                 button("Details", "v") +
                 (isDocumentDB(item)
@@ -2689,7 +2992,9 @@
                       : "View route",
                   "enter",
                   "primary",
-                ) + button("Disconnect / stop", "d", "danger"),
+                ) +
+                  (canLaunch() ? button("Open client", "g") : "") +
+                  button("Disconnect / stop", "d", "danger"),
                 button("Details", "v") +
                   button("Recheck", "r") +
                   (isDocumentDB(item.connection) && activeTunnel(item)
@@ -2773,6 +3078,8 @@
           return "Tab/↑/↓: fields | Ctrl+S: save edit | Enter: next/review | Ctrl+U: clear | Esc: cancel";
         if (state.picker)
           return "↑/↓: roles | Space: select | Enter: review | Esc: cancel";
+        if (state.review?.kind === "client-app")
+          return "↑/↓: client | Enter: start | d: DataGrip | m: Compass | Esc: back";
         if (state.review?.kind === "new-database")
           return "↑/↓: type | Enter: choose | p: PostgreSQL | d: DocumentDB | Esc: cancel";
         if (state.review)
@@ -2947,7 +3254,7 @@
           return;
         if (event.target.type === "checkbox" && key === " ") return;
         const recognized =
-          /^[1-6?AysqnvelfdrcCwNjk ]$/.test(key) ||
+          /^[1-6?AysqnvelfdrcCwNjkgm ]$/.test(key) ||
           [
             "enter",
             "esc",
