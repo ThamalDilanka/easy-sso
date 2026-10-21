@@ -200,7 +200,13 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 			if c.IAMDatabase() {
 				lines = append(lines, databaseLoginGuidance()...)
 			} else if c.DocDBIAM() {
-				lines = append(lines, "Connect terminal opens mongosh logged in with this role; no password.", "Admin setup: create your role ARN as a user in $external with mechanism MONGODB-AWS.")
+				// A bookmark review has no run yet: the selected profile's
+				// active role is the user its next connection logs in as.
+				user, arn := m.reviewRoleARN(p)
+				lines = append(lines, "Connect terminal opens mongosh logged in with this role; no password.", "")
+				lines = append(lines, m.documentDBIAMClient(c, m.documentDBPort(c), user)...)
+				lines = append(lines, "")
+				lines = append(lines, documentDBIAMAdmin(c, arn)...)
 			} else if isDocumentDB(c) {
 				lines = append(lines, "Tunnel transport only; DataGrip or any MongoDB client logs in with your DocumentDB user.", "")
 				lines = append(lines, m.documentDBClient(c, m.documentDBPort(c))...)
@@ -269,7 +275,14 @@ func (m *Model) runDetails(r domain.Run) []string {
 	}
 	if isDocumentDB(r.Connection) && activeTunnel(r) {
 		lines = append(lines, "")
-		lines = append(lines, m.documentDBClient(r.Connection, r.Connection.LocalPort)...)
+		if r.Connection.DocDBIAM() {
+			arn, _ := profiles.IAMRoleARN(r.Identity)
+			lines = append(lines, m.documentDBIAMClient(r.Connection, r.Connection.LocalPort, runRoleARN(r))...)
+			lines = append(lines, "")
+			lines = append(lines, documentDBIAMAdmin(r.Connection, arn)...)
+		} else {
+			lines = append(lines, m.documentDBClient(r.Connection, r.Connection.LocalPort)...)
+		}
 	}
 	return lines
 }

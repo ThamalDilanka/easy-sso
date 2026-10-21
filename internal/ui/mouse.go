@@ -210,6 +210,9 @@ func (m *Model) controls() []control {
 				label = "Open tunnel"
 			}
 			c := []control{{label, "enter"}}
+			if m.canLaunch() {
+				c = append(c, control{"Open client", "g"})
+			}
 			if m.review.connection.Kind == "ec2" {
 				c = append(c, control{"New window", "w"})
 			}
@@ -229,11 +232,25 @@ func (m *Model) controls() []control {
 			if m.canFocusRun(m.review.run) {
 				c = append(c, control{"Focus terminal", "enter"})
 			}
+			if m.canLaunch() {
+				c = append(c, control{"Open client", "g"})
+			}
 			c = append(c, control{"Disconnect / stop", "d"}, control{"Recheck", "r"})
 			if isDocumentDB(m.review.run.Connection) && activeTunnel(m.review.run) {
 				c = append(c, control{"Copy URL", "c"})
 			}
 			return append(c, control{"Back", "esc"})
+		case "client-app":
+			var c []control
+			for _, app := range foundApps(m.review.installs) {
+				c = append(c, control{clientName(app), clientKey(app)})
+			}
+			if len(c) == 0 {
+				c = append(c, control{"Use terminal", "enter"})
+			}
+			return append(c, control{"Back", "esc"})
+		case "client-place":
+			return []control{{"Windows", "w"}, {"WSL", "l"}, {"Cancel", "esc"}}
 		case "role":
 			c := []control{{"Renew", "r"}, {"Remove", "d"}}
 			if publish, ok := publishControl(m.review.role); ok {
@@ -257,6 +274,9 @@ func (m *Model) controls() []control {
 					label = "Open tunnel"
 				}
 				c = append(c, control{label, "enter"})
+				if m.canLaunch() {
+					c = append(c, control{"Open client", "g"})
+				}
 				c = append(c, control{"Edit", "e"}, control{"Details", "v"})
 				if !t.DatabaseClient() {
 					c = append(c, control{"Set up IAM", "l"})
@@ -278,6 +298,9 @@ func (m *Model) controls() []control {
 				label = "Focus terminal"
 			}
 			c := []control{{label, "enter"}}
+			if m.canLaunch() {
+				c = append(c, control{"Open client", "g"})
+			}
 			c = append(c, control{"Disconnect / stop", "d"}, control{"Details", "v"}, control{"Recheck", "r"})
 			if r := rs[m.selectedRow]; isDocumentDB(r.Connection) && activeTunnel(r) {
 				c = append(c, control{"Copy URL", "c"})
@@ -308,7 +331,10 @@ func (m *Model) controlGroups(compact bool) (primary, secondary []control) {
 	for _, c := range m.controls() {
 		secondaryAction := false
 		if !m.busy && !m.help && m.form == nil && !m.picker {
-			if m.review != nil {
+			if m.review != nil && (m.review.kind == "client-app" || m.review.kind == "client-place") {
+				// The pickers' letters are choices, not settings: only Back moves right.
+				secondaryAction = c.key == "esc"
+			} else if m.review != nil {
 				secondaryAction = c.key == "esc" || c.key == "e" || c.key == "l" || c.key == "N" || (c.key == "c" && (m.review.kind == "connection" || m.review.kind == "run"))
 				if m.review.kind == "run" {
 					secondaryAction = secondaryAction || c.key == "r"

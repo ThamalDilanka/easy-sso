@@ -115,6 +115,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if cmd, ok := m.exportCAKey(key); ok {
 			return cmd
 		}
+		if key == "g" {
+			return m.launchKey()
+		}
 		if key == "w" && r.connection.Kind == "ec2" {
 			return m.openMode(r.connection, true)
 		}
@@ -155,6 +158,9 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if cmd, ok := m.exportCAKey(key); ok {
 			return cmd
 		}
+		if key == "g" {
+			return m.launchKey()
+		}
 		if key == "f" || key == "enter" {
 			return m.focusRun(r.run)
 		}
@@ -178,6 +184,10 @@ func (m *Model) reviewKey(k tea.KeyMsg) tea.Cmd {
 		if key == "c" {
 			return m.copyProfileName(r.role)
 		}
+	case "client-app":
+		return m.clientAppKey(key)
+	case "client-place":
+		return m.clientPlaceKey(key)
 	case "stop":
 		if key == "enter" && m.services.Sessions != nil {
 			id := r.run.ID

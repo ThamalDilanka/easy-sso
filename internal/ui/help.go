@@ -50,6 +50,7 @@ func shortcutGroups() []shortcutGroup {
 			{"p", "In connection review: temporarily override the local port."},
 			{"c / C", "DocumentDB: copy the DataGrip URL / the URI with tlsCAFile for mongosh, Compass and drivers. No user or password is copied."},
 			{"x", "WSL + DocumentDB: copy the CA file to %USERPROFILE%\\.easy-sso and its path to the clipboard."},
+			{"g", "DocumentDB IAM with a connected run: start DataGrip or MongoDB Compass with that run's role credentials. The client keeps them until it exits."},
 		}},
 		{"SESSIONS & TUNNELS", []shortcut{
 			{"Enter / f", "Focus an existing terminal. Enter shows details when no terminal can be focused."},
@@ -57,6 +58,7 @@ func shortcutGroups() []shortcutGroup {
 			{"d", "Review disconnect / stop for the selected run."},
 			{"r", "Recheck status; recovered tunnels use their original profile to verify AWS and local port state."},
 			{"c / C / x", "Open DocumentDB tunnel: copy the DataGrip URL / client URI; x copies the CA file to Windows (WSL)."},
+			{"g", "Connected DocumentDB IAM run: start DataGrip or MongoDB Compass with its role credentials."},
 		}},
 		{"CREDENTIALS", []shortcut{
 			{"Enter / v", "Show the selected managed credential's details."},
@@ -78,6 +80,8 @@ func shortcutGroups() []shortcutGroup {
 			{"Enter", "Advance a field, then submit or confirm the displayed action."},
 			{"Ctrl+U", "Clear the current text field."},
 			{"p / d", "In the database type picker: RDS PostgreSQL / DocumentDB."},
+			{"d / m", "In the client picker: DataGrip / MongoDB Compass; Enter uses the terminal when neither is found."},
+			{"w / l", "In the place picker (WSL, client on both sides): Windows / WSL. The choice is saved."},
 			{"Ctrl+S", "Save an edited connection without opening a session."},
 			{"Space", "Toggle the SSO cleanup acknowledgement when focused."},
 			{"Esc", "Cancel / go back. Connection drafts are retained."},

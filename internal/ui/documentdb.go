@@ -13,6 +13,8 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/launch"
+	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/ThamalDilanka/easy-sso/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -87,7 +89,30 @@ func dataGripURL(port int) string {
 func clientURI(port int, ca string, elastic bool) string {
 	uri := fmt.Sprintf("mongodb://127.0.0.1:%d/?tls=true&%s", port, documentDBOptions)
 	if ca != "" && !elastic {
-		uri += "&tlsCAFile=" + strings.ReplaceAll(url.QueryEscape(ca), "+", "%20")
+		uri += "&tlsCAFile=" + escapeCA(ca)
+	}
+	return uri
+}
+
+// escapeCA writes a space as %20, never +, so shells and drivers read the
+// same path.
+func escapeCA(ca string) string { return strings.ReplaceAll(url.QueryEscape(ca), "+", "%20") }
+
+// documentDBIAMOptions log in as the role ARN in $external. The role keys come
+// from the client's environment; a URL never carries a user, key or token.
+const documentDBIAMOptions = "directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true"
+
+// dataGripIAMURL is the URL-only DataGrip data source of a docdb-iam run; TLS
+// stays in DataGrip's SSL settings.
+func dataGripIAMURL(port int) string {
+	return fmt.Sprintf("mongodb://127.0.0.1:%d/?%s", port, documentDBIAMOptions)
+}
+
+// clientIAMURI is the docdb-iam URI for mongosh, Compass and drivers.
+func clientIAMURI(port int, ca string) string {
+	uri := fmt.Sprintf("mongodb://127.0.0.1:%d/?tls=true&%s", port, documentDBIAMOptions)
+	if ca != "" {
+		uri += "&tlsCAFile=" + escapeCA(ca)
 	}
 	return uri
 }
@@ -122,9 +147,26 @@ func (m *Model) openTunnel(c domain.Connection) (domain.Run, bool) {
 	return domain.Run{}, false
 }
 
+// iamRun finds the newest live docdb-iam run of bookmark c: same route and
+// database. A tunnel-mode run on the same route is not one.
+func (m *Model) iamRun(c domain.Connection) (domain.Run, bool) {
+	for i := len(m.runs) - 1; i >= 0; i-- {
+		if r := m.runs[i]; r.Connection.DocDBIAM() && activeTunnel(r) && sameDocumentDBRoute(r.Connection, c) && r.Connection.Database == c.Database {
+			return r, true
+		}
+	}
+	return domain.Run{}, false
+}
+
 // documentDBPort is the port of an open tunnel on the same route, else the
-// bookmark's own local port.
+// bookmark's own local port. A docdb-iam bookmark uses its own live run.
 func (m *Model) documentDBPort(c domain.Connection) int {
+	if c.DocDBIAM() {
+		if r, ok := m.iamRun(c); ok {
+			return r.Connection.LocalPort
+		}
+		return c.LocalPort
+	}
 	if r, ok := m.openTunnel(c); ok {
 		return r.Connection.LocalPort
 	}
@@ -407,6 +449,61 @@ func (m *Model) documentDBClient(c domain.Connection, port int) []string {
 	return lines
 }
 
+// documentDBIAMClient is the docdb-iam guide: DataGrip with a URL-only data
+// source and no auth, the role ARN as the $external user. It never shows a key.
+func (m *Model) documentDBIAMClient(c domain.Connection, port int, user string) []string {
+	lines := m.detailSection("DATAGRIP OR COMPASS (IAM LOGIN)", [][2]string{
+		{"Login", "IAM (MONGODB-AWS), no password"},
+		{"DB user", user},
+		{"DataGrip", "URL only, Authentication No auth, then g to start it"},
+		{"SSH/SSL", "Use SSL on · CA file below · Mode Verify CA · SSH tunnel off"},
+	})
+	path, err := m.caPath(c)
+	lines = append(lines, m.caRows(c, path, err)...)
+	lines = append(lines, m.detailRow("Admin", "createUser in $external with mechanisms MONGODB-AWS (v shows the command)"))
+	lines = append(lines, m.detailRow("Other clients", "g starts Compass too · C copies URI for mongosh/Compass/drivers"))
+	// The URL stands alone on its line so it can be selected by hand.
+	lines = append(lines, "URL (c copies):", dataGripIAMURL(port))
+	lines = append(lines, "With Verify CA and the CA file, DataGrip checks the certificate chain; the hostname check is off because the route is 127.0.0.1.")
+	if strings.Contains(strings.ToLower(c.Endpoint), ".cluster-ro-") {
+		lines = append(lines, "Reader endpoint: read-only for every user; use the cluster endpoint to write.")
+	}
+	return lines
+}
+
+// documentDBIAMAdmin is the one-time admin setup for a role. arn is empty when
+// it is not known yet.
+func documentDBIAMAdmin(c domain.Connection, arn string) []string {
+	if arn == "" {
+		arn = "<role ARN>"
+	}
+	db := c.Database
+	if db == "" {
+		db = "<db>"
+	}
+	return []string{
+		"Admin setup, once per role (an admin user runs it in mongosh):",
+		`db.getSiblingDB("$external").runCommand({createUser: "` + arn + `", mechanisms: ["MONGODB-AWS"], roles: [{role: "read", db: "` + db + `"}]})`,
+		"5.0 instance-based; not elastic; never the primary user.",
+		"Login proof: db.runCommand({connectionStatus:1}) must show your role ARN.",
+	}
+}
+
+// reviewRoleARN is the $external user of the selected profile's active role,
+// shown in a bookmark review, and the ARN alone ("" when unknown).
+func (m *Model) reviewRoleARN(p domain.Profile) (string, string) {
+	for _, r := range m.roles {
+		if sameProfile(r.Profile, p) && roleActive(r) {
+			arn, err := profiles.IAMRoleARN(r.Identity)
+			if err != nil {
+				return "Unavailable for this identity", ""
+			}
+			return arn, arn
+		}
+	}
+	return "Log in to resolve your role ARN", ""
+}
+
 // caCopyMsg reports a C copy: its CA check result and the status to show.
 type caCopyMsg struct {
 	path     string
@@ -485,20 +582,27 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 		return copy(ctx, text) == nil
 	}
 	elastic := connections.DocumentDBElastic(c.Endpoint)
+	iam := c.DocDBIAM()
+	if !generic && iam {
+		feedback := fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. Data source: URL only, Authentication No auth, Use SSL with the CA file; g starts DataGrip.", port)
+		if path, err := m.caPath(c); err == nil && wsl() {
+			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. CA file: %s · Mode Verify CA · URL only, No auth; g starts DataGrip.", port, m.windowsCAHint(path))
+		}
+		url := dataGripIAMURL(port)
+		return func() tea.Msg {
+			if !write(url) {
+				return clipboardMsg{copyFailure(false)}
+			}
+			return clipboardMsg{feedback}
+		}
+	}
 	if !generic {
 		feedback := fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL set the CA file and Verify CA; enter your DocumentDB user in DataGrip.", port)
 		if elastic {
 			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. In SSH/SSL turn on Use SSL with no CA file; enter your DocumentDB user in DataGrip.", port)
 		} else if path, err := m.caPath(c); err == nil && wsl() {
 			// Under WSL the Windows CA path comes first so the status bar keeps it.
-			ca := wslPath(path)
-			switch {
-			case m.ca[path].win != "":
-				ca = m.ca[path].win
-			case strings.HasPrefix(ca, `\\`):
-				ca = "press x to copy it to Windows"
-			}
-			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. CA file: %s · Mode Verify CA · log in with your DocumentDB user.", port, ca)
+			feedback = fmt.Sprintf("Copied DataGrip URL for 127.0.0.1:%d. CA file: %s · Mode Verify CA · log in with your DocumentDB user.", port, m.windowsCAHint(path))
 		}
 		url := dataGripURL(port)
 		return func() tea.Msg {
@@ -507,6 +611,12 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 			}
 			return clipboardMsg{feedback}
 		}
+	}
+	uri := func(ca string, elastic bool) string {
+		if iam {
+			return clientIAMURI(port, ca)
+		}
+		return clientURI(port, ca, elastic)
 	}
 	path, pathErr := m.caPath(c)
 	ensure := m.ensurer()
@@ -520,20 +630,20 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 	}
 	return func() tea.Msg {
 		if elastic {
-			if !write(clientURI(port, "", true)) {
+			if !write(uri("", true)) {
 				return clipboardMsg{copyFailure(true)}
 			}
 			return clipboardMsg{"Copied client URI (elastic clusters need no tlsCAFile). In a shell, wrap it in single quotes."}
 		}
 		if pathErr != nil {
-			if !write(clientURI(port, "", false)) {
+			if !write(uri("", false)) {
 				return clipboardMsg{copyFailure(true)}
 			}
 			return clipboardMsg{"Copied without tlsCAFile; set RDS CA file for aws-cn."}
 		}
 		_, err := ensure(context.Background(), c)
 		msg := caCopyMsg{path: path, err: err, stale: err != nil && database.CachedCA(path)}
-		if !write(clientURI(port, ca, false)) {
+		if !write(uri(ca, false)) {
 			msg.feedback = copyFailure(true)
 			return msg
 		}
@@ -547,5 +657,346 @@ func (m *Model) copyDocumentDB(c domain.Connection, port int, generic bool) tea.
 			msg.feedback = "Copied client URI with tlsCAFile " + ca + ". In a shell, wrap it in single quotes."
 		}
 		return msg
+	}
+}
+
+// windowsCAHint is the CA file a Windows DataGrip reads under WSL: the
+// exported copy, the drive path, or a hint to export it with x.
+func (m *Model) windowsCAHint(path string) string {
+	ca := wslPath(path)
+	switch {
+	case m.ca[path].win != "":
+		ca = m.ca[path].win
+	case strings.HasPrefix(ca, `\\`):
+		ca = "press x to copy it to Windows"
+	}
+	return ca
+}
+
+// The sessions service may offer these; the UI never holds a launcher or a
+// snapshot (see domain.SessionService).
+type clientLister interface {
+	ClientApps(context.Context) ([]launch.Install, error)
+}
+type clientLauncher interface {
+	LaunchClientApp(ctx context.Context, runID string, in launch.Install) (time.Time, error)
+}
+
+// clientAppsMsg reports the database clients found for a g press.
+type clientAppsMsg struct {
+	request  uint64
+	run      domain.Run
+	installs []launch.Install
+	err      error
+}
+
+// clientLaunchMsg reports a client start: the credentials' expiry, or a fixed
+// failure text. saveErr is a failed save of the place choice.
+type clientLaunchMsg struct {
+	request       uint64
+	name, profile string
+	expiry        time.Time
+	err, saveErr  error
+}
+
+// Fixed g texts.
+const (
+	launchNoRun       = "No connected DocumentDB IAM run here. Connect the bookmark in Databases (Enter), then press g."
+	launchNotIAM      = "g starts DataGrip or Compass for DocumentDB IAM connections only."
+	launchUnavailable = "Starting DataGrip or Compass is not available in this build."
+	launchPending     = "A database client lookup or start is still running."
+)
+
+// clientName is the display name of a client app.
+func clientName(app launch.App) string {
+	if app == launch.Compass {
+		return "MongoDB Compass"
+	}
+	return "DataGrip"
+}
+
+// clientKey picks app in the client picker.
+func clientKey(app launch.App) string {
+	if app == launch.Compass {
+		return "m"
+	}
+	return "d"
+}
+
+// foundApps lists each app found at least once, DataGrip first.
+func foundApps(installs []launch.Install) []launch.App {
+	var apps []launch.App
+	for _, app := range []launch.App{launch.DataGrip, launch.Compass} {
+		for _, in := range installs {
+			if in.App == app {
+				apps = append(apps, app)
+				break
+			}
+		}
+	}
+	return apps
+}
+
+// placeInstall is the first install of app at place.
+func placeInstall(installs []launch.Install, app launch.App, place launch.Place) (launch.Install, bool) {
+	for _, in := range installs {
+		if in.App == app && in.Place == place {
+			return in, true
+		}
+	}
+	return launch.Install{}, false
+}
+
+// placeName labels where an install lives: under WSL a local install is the
+// WSL one.
+func placeName(place launch.Place) string {
+	switch {
+	case place == launch.Windows:
+		return "Windows"
+	case wsl():
+		return "WSL"
+	}
+	return "this machine"
+}
+
+// launchTarget resolves the run g acts on: the review first, then the selected
+// row. ok is false when g has no meaning here; status then names the refusal.
+func (m *Model) launchTarget() (run domain.Run, status string, ok bool) {
+	fromBookmark := func(c domain.Connection) (domain.Run, string, bool) {
+		if c.Kind != "db" {
+			return domain.Run{}, "", false
+		}
+		if !c.DocDBIAM() {
+			return domain.Run{}, launchNotIAM, false
+		}
+		if r, found := m.iamRun(c); found {
+			return r, "", true
+		}
+		return domain.Run{}, launchNoRun, false
+	}
+	fromRun := func(r domain.Run) (domain.Run, string, bool) {
+		if r.Connection.Kind != "db" {
+			return domain.Run{}, "", false
+		}
+		if !r.Connection.DocDBIAM() {
+			return domain.Run{}, launchNotIAM, false
+		}
+		if !activeTunnel(r) {
+			return domain.Run{}, launchNoRun, false
+		}
+		return r, "", true
+	}
+	if r := m.review; r != nil {
+		switch r.kind {
+		case "connection":
+			return fromBookmark(r.connection)
+		case "run":
+			return fromRun(r.run)
+		}
+		return domain.Run{}, "", false
+	}
+	switch m.screen {
+	case databases:
+		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) {
+			return fromBookmark(ts[m.selectedRow])
+		}
+	case tunnels:
+		if rs := m.visibleRuns(); m.selectedRow >= 0 && m.selectedRow < len(rs) {
+			return fromRun(rs[m.selectedRow])
+		}
+	}
+	return domain.Run{}, "", false
+}
+
+// canLaunch reports whether the Open client control belongs on this view.
+func (m *Model) canLaunch() bool {
+	_, _, ok := m.launchTarget()
+	return ok
+}
+
+// launchKey handles g, from the keyboard and from the Open client control:
+// look for DataGrip and Compass off the UI goroutine, then offer them.
+func (m *Model) launchKey() tea.Cmd {
+	run, status, ok := m.launchTarget()
+	if !ok {
+		if status != "" {
+			m.status = status
+		}
+		return nil
+	}
+	if m.clientPending {
+		m.status = launchPending
+		return nil
+	}
+	lister, listOK := m.services.Sessions.(clientLister)
+	if _, launchOK := m.services.Sessions.(clientLauncher); !listOK || !launchOK {
+		m.status = launchUnavailable
+		return nil
+	}
+	m.clientPending = true
+	m.clientRequest++
+	id := m.clientRequest
+	m.status = "Looking for database clients..."
+	return func() tea.Msg {
+		// Finding a Windows client runs WSL interop, which can take a while.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		installs, err := lister.ClientApps(ctx)
+		return clientAppsMsg{request: id, run: run, installs: installs, err: err}
+	}
+}
+
+// receiveClientApps opens the client picker for the run g was pressed on.
+func (m *Model) receiveClientApps(x clientAppsMsg) {
+	if x.request != m.clientRequest {
+		return
+	}
+	m.clientPending = false
+	if x.err != nil {
+		m.status = "Could not look for DataGrip or Compass."
+		return
+	}
+	// Something else took the screen meanwhile; do not pop a picker over it.
+	if m.busy || m.form != nil || m.help || m.picker || m.terminalID != "" || (m.review != nil && m.review.kind == "exit") {
+		m.status = "Press g again to choose DataGrip or Compass."
+		return
+	}
+	listScroll := m.scroll
+	if m.review != nil {
+		listScroll = m.review.listScroll
+	}
+	m.review = &review{kind: "client-app", run: x.run, installs: x.installs, listScroll: listScroll}
+	m.scroll = 0
+	m.status = ""
+}
+
+// clientAppKey handles the client picker.
+func (m *Model) clientAppKey(key string) tea.Cmd {
+	r := m.review
+	apps := foundApps(r.installs)
+	switch key {
+	case "up", "k":
+		if r.choice > 0 {
+			r.choice--
+		}
+	case "down", "j":
+		if r.choice+1 < len(apps) {
+			r.choice++
+		}
+	case "d":
+		return m.chooseClientApp(launch.DataGrip)
+	case "m":
+		return m.chooseClientApp(launch.Compass)
+	case "enter":
+		if len(apps) == 0 {
+			return m.focusRun(r.run)
+		}
+		return m.chooseClientApp(apps[min(r.choice, len(apps)-1)])
+	}
+	return nil
+}
+
+// chooseClientApp starts app, asking for the place only under WSL when it is
+// found on Windows and in WSL and no choice is saved.
+func (m *Model) chooseClientApp(app launch.App) tea.Cmd {
+	r := m.review
+	local, hasLocal := placeInstall(r.installs, app, launch.Local)
+	windows, hasWindows := placeInstall(r.installs, app, launch.Windows)
+	switch {
+	case !hasLocal && !hasWindows:
+		m.status = clientName(app) + " was not found."
+		return nil
+	case hasLocal && hasWindows && wsl():
+		switch launch.Place(m.clientPlaces[string(app)]) {
+		case launch.Local:
+			return m.startClient(r.run, local, false)
+		case launch.Windows:
+			return m.startClient(r.run, windows, false)
+		}
+		m.review = &review{kind: "client-place", run: r.run, installs: r.installs, app: app, listScroll: r.listScroll}
+		return nil
+	case hasLocal:
+		return m.startClient(r.run, local, false)
+	}
+	return m.startClient(r.run, windows, false)
+}
+
+// clientPlaceKey handles the Windows or WSL choice; it is saved.
+func (m *Model) clientPlaceKey(key string) tea.Cmd {
+	r := m.review
+	places := []launch.Place{launch.Windows, launch.Local}
+	place := launch.Place("")
+	switch key {
+	case "up", "k":
+		r.choice = 0
+	case "down", "j":
+		r.choice = 1
+	case "w":
+		place = launch.Windows
+	case "l":
+		place = launch.Local
+	case "enter":
+		place = places[min(max(r.choice, 0), 1)]
+	}
+	if place == "" {
+		return nil
+	}
+	in, ok := placeInstall(r.installs, r.app, place)
+	if !ok {
+		return nil
+	}
+	if m.clientPlaces == nil {
+		m.clientPlaces = map[string]string{}
+	}
+	m.clientPlaces[string(r.app)] = string(place)
+	return m.startClient(r.run, in, true)
+}
+
+// startClient starts in with the run's frozen role credentials, which only
+// the sessions service holds. It can block about 3 s, so it runs in a command.
+func (m *Model) startClient(run domain.Run, in launch.Install, save bool) tea.Cmd {
+	launcher, ok := m.services.Sessions.(clientLauncher)
+	if !ok {
+		m.status = launchUnavailable
+		return nil
+	}
+	var saveChoice func(string, string) error
+	if save {
+		saveChoice = m.services.SaveClientPlace
+	}
+	if r := m.review; r != nil {
+		m.scroll = r.listScroll
+	}
+	m.review = nil
+	m.clientPending = true
+	m.clientRequest++
+	id, name, profile := m.clientRequest, clientName(in.App), run.Profile.Name
+	m.status = "Starting " + name + "..."
+	return func() tea.Msg {
+		msg := clientLaunchMsg{request: id, name: name, profile: profile}
+		if saveChoice != nil {
+			msg.saveErr = saveChoice(string(in.App), string(in.Place))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		msg.expiry, msg.err = launcher.LaunchClientApp(ctx, run.ID, in)
+		return msg
+	}
+}
+
+// receiveClientLaunch shows the start result. Failure texts are fixed texts
+// from the sessions service and never carry a key.
+func (m *Model) receiveClientLaunch(x clientLaunchMsg) {
+	if x.request != m.clientRequest {
+		return
+	}
+	m.clientPending = false
+	if x.err != nil {
+		m.status = x.err.Error()
+		return
+	}
+	m.status = fmt.Sprintf("%s started with role [%s] credentials until %s. It keeps them until it exits.", x.name, x.profile, x.expiry.Local().Format("15:04"))
+	if x.saveErr != nil {
+		m.status += " Could not save the Windows or WSL choice; g asks again after a restart."
 	}
 }

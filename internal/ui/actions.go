@@ -263,6 +263,8 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 		if cmd, ok := m.exportCAKey(key); ok {
 			return cmd
 		}
+	case "g":
+		return m.launchKey()
 	case "R":
 		if m.screen == credentials && m.services.Credentials != nil {
 			return m.operation("Retry cleanup", func(ctx context.Context) (domain.Run, domain.ImportPlan, error) {

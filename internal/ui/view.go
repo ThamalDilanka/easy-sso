@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/launch"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -239,6 +240,9 @@ func (m *Model) footer() string {
 		switch m.review.kind {
 		case "run":
 			keys := "d: disconnect/stop | r: recheck | PgUp/PgDn: scroll | Esc: back"
+			if m.canLaunch() {
+				keys = "g: open client | " + keys
+			}
 			if m.canFocusRun(m.review.run) {
 				keys = "Enter/f: focus terminal | " + keys
 			}
@@ -249,6 +253,13 @@ func (m *Model) footer() string {
 			return "Enter: connect | e: edit | PgUp/PgDn: scroll | Esc: back"
 		case "new-database":
 			return "↑/↓: type | Enter: choose | p: PostgreSQL | d: DocumentDB | Esc: cancel"
+		case "client-app":
+			if len(foundApps(m.review.installs)) == 0 {
+				return "Enter: use the terminal | Esc: back"
+			}
+			return "↑/↓: client | Enter: start | d: DataGrip | m: Compass | Esc: back"
+		case "client-place":
+			return "↑/↓: place | Enter: start | w: Windows | l: WSL | Esc: back"
 		}
 		return "Enter: confirm | Esc: cancel | ?: help"
 	}
@@ -266,6 +277,9 @@ func (m *Model) footer() string {
 		}
 		if ts := m.targets(); m.selectedRow >= 0 && m.selectedRow < len(ts) && isDocumentDB(ts[m.selectedRow]) {
 			if ts[m.selectedRow].DocDBIAM() {
+				if m.canLaunch() {
+					return "↑/↓: select | Enter: connect | g: open client | v: details | c: copy URL | n: new | e: edit" + common
+				}
 				return "↑/↓: select | Enter: connect | v: details | c: copy URL | n: new | e: edit" + common
 			}
 			return "↑/↓: select | Enter: open tunnel | v: details | c: copy URL | l: IAM setup | n: new | e: edit" + common
@@ -280,6 +294,9 @@ func (m *Model) footer() string {
 		copyURL := ""
 		if m.selectedRow >= 0 && m.selectedRow < len(rs) && isDocumentDB(rs[m.selectedRow].Connection) && activeTunnel(rs[m.selectedRow]) {
 			copyURL = " | c: copy URL"
+		}
+		if m.canLaunch() {
+			action += " | g: open client"
 		}
 		return action + " | v: details | d: disconnect/stop | r: recheck" + copyURL + common
 	case credentials:
@@ -414,6 +431,36 @@ func (m *Model) reviewContent() []string {
 			}
 		}
 		lines = append(lines, "Existing managed roles are retained.", "Clear cached AWS CLI SSO logins for all profiles in this environment.", "Other CLI SSO workflows may need to sign in again.", "This does not revoke issued role credentials or remove unmanaged copies.")
+	case "client-app":
+		lines = m.detailSection("START A DATABASE CLIENT", [][2]string{{"Run", r.run.Connection.Name}, {"Profile", r.run.Profile.Name}, {"Local route", localRoute(r.run.Connection)}})
+		lines = append(lines, "")
+		apps := foundApps(r.installs)
+		if len(apps) == 0 {
+			lines = append(lines, "No DataGrip or Compass found. Install one, or use the terminal (Enter).")
+		}
+		for i, app := range apps {
+			var places []string
+			for _, place := range []launch.Place{launch.Windows, launch.Local} {
+				if _, ok := placeInstall(r.installs, app, place); ok {
+					places = append(places, placeName(place))
+				}
+			}
+			label := fmt.Sprintf("%s (%s) · %s", clientName(app), clientKey(app), strings.Join(places, " or "))
+			lines = append(lines, m.clickable(m.row(label, r.choice == i), mouseAction{kind: "key", key: clientKey(app)}))
+		}
+		lines = append(lines, "", "The client gets this run's role keys in its environment only and keeps them until it exits.")
+	case "client-place":
+		name := clientName(r.app)
+		lines = append(lines, name+" is installed on Windows and in WSL. Where should it start?", "")
+		for i, place := range []launch.Place{launch.Windows, launch.Local} {
+			in, _ := placeInstall(r.installs, r.app, place)
+			key := "w"
+			if place == launch.Local {
+				key = "l"
+			}
+			lines = append(lines, m.clickable(m.row(fmt.Sprintf("%s (%s) · %s", placeName(place), key, in.Path), r.choice == i), mouseAction{kind: "key", key: key}))
+		}
+		lines = append(lines, "", "easy-sso saves this choice for "+name+".")
 	case "run", "stop":
 		run := r.run
 		lines = m.runDetails(run)

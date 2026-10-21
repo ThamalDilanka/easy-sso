@@ -13,6 +13,9 @@ type Settings struct {
 	Theme          string            `json:"theme,omitempty"`
 	Version        int               `json:"version"`
 	AccountAliases map[string]string `json:"accountAliases"`
+	// ClientPlaces remembers where to start a database client found both on
+	// Windows and in WSL: app "datagrip" or "compass", place "local" or "windows".
+	ClientPlaces map[string]string `json:"clientPlaces,omitempty"`
 }
 
 func LoadSettings(state string) (Settings, error) {
@@ -35,6 +38,13 @@ func LoadSettings(state string) (Settings, error) {
 			return s, err
 		}
 	}
+	// An unknown client choice is only a preference: drop it, so the user is
+	// asked again, instead of refusing to start.
+	for app, place := range s.ClientPlaces {
+		if validateClientPlace(app, place) != nil {
+			delete(s.ClientPlaces, app)
+		}
+	}
 	return s, nil
 }
 func validateAlias(account, label string) error {
@@ -51,6 +61,29 @@ func SaveAlias(state, account, label string) error {
 		return err
 	}
 	return updateSettings(state, func(s *Settings) { s.AccountAliases[account] = label })
+}
+
+func validateClientPlace(app, place string) error {
+	if app != "datagrip" && app != "compass" {
+		return errors.New("invalid database client")
+	}
+	if place != "local" && place != "windows" {
+		return errors.New("invalid database client place")
+	}
+	return nil
+}
+
+// SaveClientPlace remembers where app starts when it is found in both places.
+func SaveClientPlace(state, app, place string) error {
+	if err := validateClientPlace(app, place); err != nil {
+		return err
+	}
+	return updateSettings(state, func(s *Settings) {
+		if s.ClientPlaces == nil {
+			s.ClientPlaces = map[string]string{}
+		}
+		s.ClientPlaces[app] = place
+	})
 }
 
 func SaveTheme(state, theme string) error {

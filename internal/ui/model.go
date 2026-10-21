@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
+	"github.com/ThamalDilanka/easy-sso/internal/launch"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/timer"
@@ -85,6 +86,10 @@ type review struct {
 	selections                       []domain.Selection
 	plan                             domain.ImportPlan
 	acknowledged, replace, duplicate bool
+	// installs are the database clients found for a client-app or
+	// client-place review; app is the client a client-place review places.
+	installs []launch.Install
+	app      launch.App
 }
 type loadedMsg struct {
 	epoch       uint64
@@ -168,6 +173,11 @@ type Model struct {
 	caStatusPath string
 	caStatusPort int
 	pendingRoute *domain.Connection
+	// clientPlaces holds the saved Windows or WSL choice per client app;
+	// clientPending is a lookup or start in flight, clientRequest its id.
+	clientPlaces  map[string]string
+	clientPending bool
+	clientRequest uint64
 }
 
 func New(s domain.Services) tea.Model {
@@ -179,6 +189,10 @@ func New(s domain.Services) tea.Model {
 	}
 	for k, v := range s.AccountAliases {
 		m.aliases[k] = v
+	}
+	m.clientPlaces = make(map[string]string, len(s.ClientPlaces))
+	for k, v := range s.ClientPlaces {
+		m.clientPlaces[k] = v
 	}
 	for i, p := range s.Profiles {
 		if p.Name == "default" {
@@ -298,6 +312,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case caMsg:
 		return m, m.receiveCA(x)
+	case clientAppsMsg:
+		m.receiveClientApps(x)
+		return m, nil
+	case clientLaunchMsg:
+		m.receiveClientLaunch(x)
+		return m, nil
 	case caExportMsg:
 		return m, m.receiveExport(x)
 	case caCopyMsg:

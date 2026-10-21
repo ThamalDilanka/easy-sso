@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/database"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
@@ -1260,5 +1261,196 @@ func TestDocDBIAMDetailsShowRoleARN(t *testing.T) {
 		if view := f.m.View(); !strings.Contains(view, "DocumentDB IAM") || strings.Contains(view, "PostgreSQL IAM") {
 			t.Fatalf("list panel at height %d:\n%s", height, view)
 		}
+	}
+}
+
+const iamOptions = "directConnection=true&retryWrites=false&authSource=%24external&authMechanism=MONGODB-AWS&tlsAllowInvalidHostnames=true"
+
+func TestIAMGuideRowsFit(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {100, 20}} {
+		f, _, run := setupLaunch(t)
+		t.Setenv("WSL_DISTRO_NAME", "Example")
+		reader := run.Connection
+		reader.Endpoint = "example-cluster.cluster-ro-c0example.us-east-1.docdb.amazonaws.com"
+		run.Connection = reader
+		f.sessions.runs = []domain.Run{run}
+		f.conns.items = []domain.Connection{reader}
+		// The review takes the ARN from the active role, the run from its own identity.
+		f.creds.roles = []domain.ManagedRole{{Alias: "managed-one", Profile: run.Profile, Identity: run.Identity, Status: "active", Expiration: time.Now().Add(time.Hour)}}
+		finish(f.m, f.m.load())
+		arn := runRoleARN(run)
+		guide := f.m.documentDBIAMClient(reader, 37018, arn)
+		// B5: the worst case (WSL + reader) stays within 12 rows after the title.
+		if rows := len(guide) - 2; rows > 12 {
+			t.Fatalf("IAM guide has %d rows:\n%s", rows, strings.Join(guide, "\n"))
+		}
+		text := strings.Join(guide, "\n")
+		for _, want := range []string{
+			f.m.detailRow("Login", "IAM (MONGODB-AWS), no password"),
+			f.m.detailRow("DB user", arn),
+			f.m.detailRow("DataGrip", "URL only, Authentication No auth, then g to start it"),
+			f.m.detailRow("Admin", "createUser in $external with mechanisms MONGODB-AWS (v shows the command)"),
+			"\n" + dataGripIAMURL(37018) + "\n",
+			"CA file Windows", "Reader endpoint",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("guide lacks %q:\n%s", want, text)
+			}
+		}
+		for _, unwanted := range []string{"User & Password", "authSource=admin", "your DocumentDB user"} {
+			if strings.Contains(text, unwanted) {
+				t.Fatalf("IAM guide shows %q:\n%s", unwanted, text)
+			}
+		}
+		f.m.width, f.m.height = size[0], size[1]
+		for name, open := range map[string]func(){
+			"review": func() { f.m.review = nil; f.m.connectionReview(reader) },
+			"run":    func() { f.m.review = &review{kind: "run", run: run} },
+		} {
+			open()
+			content := strings.Join(f.m.reviewContent(), "\n")
+			command := `db.getSiblingDB("$external").runCommand({createUser: "` + arn + `", mechanisms: ["MONGODB-AWS"], roles: [{role: "read", db: "app_db"}]})`
+			for _, want := range []string{"IAM (MONGODB-AWS), no password", command, "5.0 instance-based; not elastic; never the primary user", "db.runCommand({connectionStatus:1})"} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%s lacks %q:\n%s", name, want, content)
+				}
+			}
+			if strings.Contains(content, "User & Password") || strings.Contains(content, dataGripURL(37018)) {
+				t.Fatalf("%s shows the tunnel guide:\n%s", name, content)
+			}
+			for scroll := 0; scroll < 50; scroll++ {
+				f.m.scroll = scroll
+				lines := strings.Split(f.m.View(), "\n")
+				if len(lines) > size[1] {
+					t.Fatalf("%s %v scroll %d: %d lines", name, size, scroll, len(lines))
+				}
+				for _, line := range lines {
+					if w := ansi.StringWidth(line); w > size[0] {
+						t.Fatalf("%s %v: line width %d: %q", name, size, w, line)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestIAMReviewRoleARNComesFromActiveRole(t *testing.T) {
+	f := setupUI(t)
+	c := docdbIAMBookmark(f)
+	f.m.connectionReview(c)
+	if content := strings.Join(f.m.reviewContent(), "\n"); !strings.Contains(content, f.m.detailRow("DB user", "Log in to resolve your role ARN")) || !strings.Contains(content, `createUser: "<role ARN>"`) {
+		t.Fatalf("no role: \n%s", content)
+	}
+	p, _ := f.m.profile()
+	id := domain.Identity{Account: p.AccountID, ARN: "arn:aws:sts::" + p.AccountID + ":assumed-role/ExampleRole/dev", UserID: "id:dev"}
+	f.m.roles = []domain.ManagedRole{{Alias: "managed-one", Profile: p, Identity: id, Status: "active", Expiration: time.Now().Add(time.Hour)}}
+	c.Database = ""
+	f.m.connectionReview(c)
+	content := strings.Join(f.m.reviewContent(), "\n")
+	arn := "arn:aws:iam::" + p.AccountID + ":role/ExampleRole"
+	if !strings.Contains(content, f.m.detailRow("DB user", arn)) || !strings.Contains(content, `createUser: "`+arn+`"`) || !strings.Contains(content, `db: "<db>"`) {
+		t.Fatalf("active role ARN missing:\n%s", content)
+	}
+}
+
+func TestIAMURLsCarryNoSecret(t *testing.T) {
+	if got := dataGripIAMURL(37018); got != "mongodb://127.0.0.1:37018/?"+iamOptions {
+		t.Fatalf("DataGrip IAM URL %q", got)
+	}
+	if got := clientIAMURI(37018, "/test-state/rds-ca-aws.pem"); got != "mongodb://127.0.0.1:37018/?tls=true&"+iamOptions+"&tlsCAFile=%2Ftest-state%2Frds-ca-aws.pem" {
+		t.Fatalf("client IAM URI %q", got)
+	}
+	f, _, run := setupLaunch(t, dataGripLocal)
+	activateOne(t, f) // the fake snapshot holds the fixture secrets
+	copied := recordCopies(f)
+	// The bookmark row, its review, the run row and the run review all copy
+	// the IAM strings with the run's port.
+	key(f.m, "c")
+	key(f.m, "C")
+	clickHit(f.m, mouseHit(t, f.m, "key", "c", 0))
+	key(f.m, "v")
+	key(f.m, "c")
+	key(f.m, "C")
+	key(f.m, "esc")
+	f.m.screen, f.m.selectedRow = tunnels, 0
+	key(f.m, "c")
+	key(f.m, "v")
+	key(f.m, "C")
+	want := []string{dataGripIAMURL(37018), clientIAMURI(37018, "/test-state/rds-ca-aws.pem"), dataGripIAMURL(37018), dataGripIAMURL(37018), clientIAMURI(37018, "/test-state/rds-ca-aws.pem"), dataGripIAMURL(37018), clientIAMURI(37018, "/test-state/rds-ca-aws.pem")}
+	if strings.Join(*copied, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("copied:\n%s\nwant:\n%s", strings.Join(*copied, "\n"), strings.Join(want, "\n"))
+	}
+	if !strings.Contains(f.m.status, "Copied client URI with tlsCAFile") {
+		t.Fatalf("C status %q", f.m.status)
+	}
+	key(f.m, "esc")
+	key(f.m, "c")
+	if !strings.Contains(f.m.status, "No auth") || strings.Contains(f.m.status, "DocumentDB user") {
+		t.Fatalf("c status %q", f.m.status)
+	}
+	shown := append(append([]string(nil), *copied...), f.m.status, strings.Join(f.m.runDetails(run), "\n"), f.m.View())
+	for _, s := range shown {
+		for _, secret := range []string{"@", "ASIA", "AKIA", "SECRET_ACCESS_TEST_ONLY", "SECRET_TEST_ONLY", "TOKEN_TEST_ONLY"} {
+			if strings.Contains(s, secret) {
+				t.Fatalf("%q in %q", secret, s)
+			}
+		}
+	}
+}
+
+func TestTunnelURLUnchanged(t *testing.T) {
+	if documentDBOptions != "directConnection=true&retryWrites=false&authSource=admin&tlsAllowInvalidHostnames=true" || documentDBIAMOptions != iamOptions {
+		t.Fatal("options changed")
+	}
+	f, ls, _ := setupLaunch(t, dataGripLocal)
+	copied := recordCopies(f)
+	tunnel := docdbBookmark(f)
+	tunnel.ID = "tunnel"
+	f.m.connections = []domain.Connection{tunnel}
+	f.m.selectedRow = 0
+	key(f.m, "c")
+	key(f.m, "C")
+	if len(*copied) != 2 || (*copied)[0] != dataGripURL(37018) || (*copied)[1] != clientURI(37018, "/test-state/rds-ca-aws.pem", false) {
+		t.Fatalf("tunnel copies %q", *copied)
+	}
+	f.m.connectionReview(tunnel)
+	content := strings.Join(f.m.reviewContent(), "\n")
+	if !strings.Contains(content, "User & Password") || strings.Contains(content, "MONGODB-AWS") || strings.Contains(content, "g to start") {
+		t.Fatalf("tunnel guide changed:\n%s", content)
+	}
+	if hasControl(f.m, "Open client", "g") || strings.Contains(f.m.footer(), "g:") {
+		t.Fatal("tunnel offers g")
+	}
+	key(f.m, "g")
+	if ls.lookups != 0 || f.m.review == nil || f.m.review.kind != "connection" {
+		t.Fatalf("g on a tunnel bookmark: lookups %d review %+v", ls.lookups, f.m.review)
+	}
+}
+
+func TestIAMListRowAndFooterOfferLaunch(t *testing.T) {
+	f, _, _ := setupLaunch(t, dataGripLocal)
+	if hint := f.m.footer(); !strings.Contains(hint, "g: open client") || !strings.Contains(hint, "c: copy URL") {
+		t.Fatalf("bookmark footer %q", hint)
+	}
+	if view := f.m.View(); !strings.Contains(view, "g starts one") {
+		t.Fatalf("list panel lacks the launch hint:\n%s", view)
+	}
+	f.m.screen, f.m.selectedRow = tunnels, 0
+	if hint := f.m.footer(); !strings.Contains(hint, "g: open client") {
+		t.Fatalf("tunnels footer %q", hint)
+	}
+	key(f.m, "v")
+	if hint := f.m.footer(); !strings.Contains(hint, "g: open client") {
+		t.Fatalf("run review footer %q", hint)
+	}
+}
+
+func TestHelpListsLaunchKey(t *testing.T) {
+	f := setupUI(t)
+	help := f.m.helpContent()
+	databasesAt, tunnelsAt := strings.Index(help, "DATABASES"), strings.Index(help, "SESSIONS & TUNNELS")
+	first, second := strings.Index(help, "\ng "), strings.LastIndex(help, "\ng ")
+	if first < databasesAt || first > tunnelsAt || second < tunnelsAt || !strings.Contains(help, "MongoDB Compass") {
+		t.Fatalf("help lacks g in both sections:\n%s", help)
 	}
 }

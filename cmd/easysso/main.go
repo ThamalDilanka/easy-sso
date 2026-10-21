@@ -287,7 +287,7 @@ func run(args []string) error {
 	if e != nil {
 		return e
 	}
-	services := domain.Services{Profiles: ps, Credentials: creds, Connections: bookmarks, Sessions: manager, OpenWindow: manager.OpenWindow, Prerequisites: p, Theme: settings.Theme, SaveTheme: func(theme string) error { return store.SaveTheme(p.StateDir, theme) }, AccountAliases: settings.AccountAliases, BookmarkPath: bookmarks.Path(), SaveAccountAlias: func(account, label string) error { return store.SaveAlias(p.StateDir, account, label) }, LoadProfiles: func() ([]domain.Profile, error) {
+	services := domain.Services{Profiles: ps, Credentials: creds, Connections: bookmarks, Sessions: manager, OpenWindow: manager.OpenWindow, Prerequisites: p, Theme: settings.Theme, SaveTheme: func(theme string) error { return store.SaveTheme(p.StateDir, theme) }, AccountAliases: settings.AccountAliases, BookmarkPath: bookmarks.Path(), SaveAccountAlias: func(account, label string) error { return store.SaveAlias(p.StateDir, account, label) }, ClientPlaces: settings.ClientPlaces, SaveClientPlace: func(app, place string) error { return store.SaveClientPlace(p.StateDir, app, place) }, LoadProfiles: func() ([]domain.Profile, error) {
 		current, err := profiles.Load(p.ConfigPath)
 		if err != nil {
 			bookmarks.SetProfiles(nil)

@@ -207,6 +207,10 @@ type Services struct {
 	SaveTheme        func(string) error
 	AccountAliases   map[string]string
 	SaveAccountAlias func(string, string) error
+	// ClientPlaces holds the saved place ("local" or "windows") per database
+	// client app ("datagrip" or "compass"); SaveClientPlace stores one choice.
+	ClientPlaces    map[string]string
+	SaveClientPlace func(app, place string) error
 	// CopyText replaces the system clipboard writer; nil selects the default.
 	CopyText func(string) error
 	// EnsureCA returns a valid public CA bundle path for a database bookmark;

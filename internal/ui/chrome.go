@@ -527,7 +527,9 @@ func (m *Model) workspaceView() string {
 					login = c.DBUser + " @ " + c.Database + " · PostgreSQL IAM"
 				}
 				details = []string{"", "Selected connection", m.detailRow("Name", c.Name), m.detailRow("Endpoint", c.Endpoint), m.detailRow("Login", login), m.detailRow("Route", fmt.Sprintf("%s → DB:%d · %s", localRoute(c), c.DBPort, c.Region))}
-				if isDocumentDB(c) {
+				if c.DocDBIAM() {
+					details = append(details, m.detailRow("Client", "DataGrip / Compass · g starts one with the run's role · c copies URL"))
+				} else if isDocumentDB(c) {
 					details = append(details, m.detailRow("Client", "DataGrip / any MongoDB client · c copies URL"))
 				}
 				if hint := m.databaseTunnelHint(c); hint != "" {
