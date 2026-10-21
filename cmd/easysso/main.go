@@ -247,6 +247,10 @@ func run(args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	}
+	// Registered before any child starts and stopped last, after Shutdown and
+	// CloseAll, so a closed terminal window quits through the normal path.
+	hangup, stopHangup := watchHangup()
+	defer stopHangup()
 	if e = store.EnsureDir(p.StateDir); e != nil {
 		return e
 	}
@@ -308,7 +312,16 @@ func run(args []string) error {
 	if client != nil {
 		client.LoginNotice = func(s string) { program.Send(ui.AuthNoticeMsg(s)) }
 	}
+	quit := make(chan struct{})
+	go func() {
+		select {
+		case <-hangup:
+			program.Quit() // a no-op once Run has returned
+		case <-quit:
+		}
+	}()
 	_, runErr := program.Run()
+	close(quit)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return errors.Join(runErr, manager.Shutdown(ctx))

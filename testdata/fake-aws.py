@@ -52,7 +52,24 @@ if args[:2]==['ssm','start-session']:
     sid='session-'+arg('--reason').split(':')[-1]
     params=json.loads(arg('--parameters','{}'))
     listener=None
-    if params:
+    if params and mode.get('pluginGrandchild'):
+        # Like the real plugin: a grandchild in the aws process group holds the
+        # port and the output pipe, and never watches its parent.
+        ready,signal_ready=os.pipe()
+        if os.fork()==0:
+            try:
+                os.close(ready)
+                held=socket.socket();held.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                held.bind(('127.0.0.1',int(params['localPortNumber'][0])));held.listen()
+                (root/'plugin.pid.tmp').write_text('%d %d'%(os.getpid(),os.getpgid(0)));os.replace(root/'plugin.pid.tmp',root/'plugin.pid')
+                os.write(signal_ready,b'1');os.close(signal_ready)
+                while True:time.sleep(1)
+            finally:
+                os._exit(1)
+        os.close(signal_ready)
+        if os.read(ready,1)!=b'1':sys.exit(1)
+        os.close(ready)
+    elif params:
         listener=socket.socket();listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
         listener.bind(('0.0.0.0' if mode.get('publicListener') else '127.0.0.1',int(params['localPortNumber'][0])));listener.listen()
     row={'SessionId':sid,'Target':arg('--target'),'Reason':arg('--reason'),'Owner':identity(os.environ.get('AWS_ACCESS_KEY_ID'))['Arn'],'StartDate':time.time(),'Status':'Connected'}

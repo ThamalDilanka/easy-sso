@@ -320,6 +320,7 @@ func (c *Client) Start(ctx context.Context, s domain.Snapshot, args []string, in
 	}
 	args = append(append([]string{}, args...), "--no-cli-pager", "--no-cli-auto-prompt")
 	cmd := exec.CommandContext(ctx, c.path, args...)
+	groupCancel(cmd)
 	cmd.Env = c.environment(&s)
 	cmd.Stdin = in
 	cmd.Stdout = out
