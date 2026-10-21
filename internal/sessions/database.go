@@ -66,7 +66,7 @@ func (m *Manager) reuseDatabase(ctx context.Context, c domain.Connection, role d
 		}
 		en.mu.Lock()
 		en.run.Connection = c
-		en.saved, en.keepTunnel, en.clientClosing = false, true, false
+		en.saved, en.keepTunnel, en.clientClosing, en.verified = false, true, false, false
 		en.mu.Unlock()
 		err = m.openDatabaseClient(ctx, en, term, path, ca)
 		en.mu.Lock()
@@ -86,6 +86,7 @@ func (m *Manager) openDatabaseClient(ctx context.Context, en *entry, term databa
 		defer cancel()
 		en.mu.Lock()
 		keep := en.keepTunnel
+		en.verified = false
 		en.mu.Unlock()
 		state := "Failed"
 		if !keep {
@@ -117,6 +118,9 @@ func (m *Manager) openDatabaseClient(ctx context.Context, en *entry, term databa
 		if err := m.verifyTLS(ctx, r.Connection.LocalPort, r.Connection.Endpoint, ca); err != nil {
 			return fail(err.Error())
 		}
+		en.mu.Lock()
+		en.verified = true
+		en.mu.Unlock()
 		home, cleanup, err := database.MongoHome(m.stateDir, r.ID)
 		if err != nil {
 			return fail(err.Error())

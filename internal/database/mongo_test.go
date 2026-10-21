@@ -107,6 +107,19 @@ func TestMongoCommandIsolationAndRedaction(t *testing.T) {
 	if _, _, err := MongoCommand("/usr/bin/mongosh", "/ca.pem", home, "x'; evil", s, c); err == nil {
 		t.Fatal("unsafe run id accepted")
 	}
+	// The database name is checked again here, so nothing can re-split the URI.
+	for _, db := range []string{"user@evil.example.invalid", "a/b", "db?authSource=admin", "db#x", "db name", "db%40", "db.x", strings.Repeat("d", 64)} {
+		bad := c
+		bad.Database = db
+		if _, _, err := MongoCommand("/usr/bin/mongosh", "/ca.pem", home, "test-run", s, bad); err == nil || err.Error() != "DocumentDB database name may use only letters, digits, _ and -" {
+			t.Fatalf("database %q: err = %v", db, err)
+		}
+	}
+	ok := c
+	ok.Database = "App_db-1" + strings.Repeat("d", 55)
+	if _, _, err := MongoCommand("/usr/bin/mongosh", "/ca.pem", home, "test-run", s, ok); err != nil {
+		t.Fatalf("63-character name refused: %v", err)
+	}
 
 	var shown strings.Builder
 	text := "process.env " + s.AccessKeyID + " " + s.SecretAccessKey + " " + s.SessionToken + "\n" + output.marker + "exampledb> "
@@ -133,7 +146,7 @@ func TestMongoLoginFailureText(t *testing.T) {
 	const (
 		auth    = "DocumentDB refused the IAM login; ask the admin to map your role ARN in $external (see v)"
 		tunnel  = "The tunnel did not answer; check the relay"
-		tlsText = "Database TLS verification failed; check the real RDS endpoint and its CA bundle."
+		tlsText = "Database TLS verification failed; check the real database endpoint and its CA bundle."
 		other   = "mongosh did not reach an authenticated prompt; check the relay and the $external user"
 	)
 	for _, tc := range []struct{ text, want string }{
@@ -332,7 +345,7 @@ func TestVerifyTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = VerifyTLS(context.Background(), port, "other.example.invalid", ca)
-	if err == nil || err.Error() != "Database TLS verification failed; check the real RDS endpoint and its CA bundle." {
+	if err == nil || err.Error() != "Database TLS verification failed; check the real database endpoint and its CA bundle." {
 		t.Fatal("wrong hostname accepted", err)
 	}
 	// SSM port forwarding always accepts locally, then drops the connection
@@ -355,8 +368,8 @@ func TestVerifyTLS(t *testing.T) {
 	if err == nil || err.Error() != "The tunnel did not answer; check the relay" {
 		t.Fatal("dropped tunnel not reported as the tunnel", err)
 	}
-	if err := VerifyTLS(context.Background(), port, "cluster.example.invalid", filepath.Join(t.TempDir(), "missing.pem")); err == nil {
-		t.Fatal("missing CA accepted")
+	if err := VerifyTLS(context.Background(), port, "cluster.example.invalid", filepath.Join(t.TempDir(), "missing.pem")); err == nil || err.Error() != "CA file unavailable or invalid; select a PEM certificate bundle" {
+		t.Fatal("missing CA accepted or named for RDS", err)
 	}
 }
 

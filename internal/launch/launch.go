@@ -88,7 +88,15 @@ var (
 )
 
 // windowsWSLENV lists the variables WSLENV carries to a Windows client.
-const windowsWSLENV = "AWS_ACCESS_KEY_ID/w:AWS_SECRET_ACCESS_KEY/w:AWS_SESSION_TOKEN/w:AWS_REGION/w:AWS_CONFIG_FILE/w:AWS_SHARED_CREDENTIALS_FILE/w:AWS_EC2_METADATA_DISABLED/w:AWS_PROFILE/w:AWS_DEFAULT_PROFILE/w"
+const windowsWSLENV = "AWS_ACCESS_KEY_ID/w:AWS_SECRET_ACCESS_KEY/w:AWS_SESSION_TOKEN/w:AWS_REGION/w:AWS_CONFIG_FILE/w:AWS_SHARED_CREDENTIALS_FILE/w:AWS_EC2_METADATA_DISABLED/w:AWS_PROFILE/w:AWS_DEFAULT_PROFILE/w:AWS_ROLE_ARN/w:AWS_WEB_IDENTITY_TOKEN_FILE/w:AWS_CONTAINER_CREDENTIALS_FULL_URI/w:AWS_CONTAINER_CREDENTIALS_RELATIVE_URI/w:AWS_CREDENTIAL_EXPIRATION/w"
+
+// windowsUnset are passed empty through WSLENV, which leaves them undefined
+// on the Windows side: a Windows-wide setting cannot pick another credential
+// source over the role keys.
+var windowsUnset = []string{"AWS_PROFILE=", "AWS_DEFAULT_PROFILE=", "AWS_ROLE_ARN=", "AWS_WEB_IDENTITY_TOKEN_FILE=", "AWS_CONTAINER_CREDENTIALS_FULL_URI=", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=", "AWS_CREDENTIAL_EXPIRATION="}
+
+// secretNames are exactly the names awscli.ChildCredentialEnv returns.
+var secretNames = map[string]bool{"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_SESSION_TOKEN": true, "AWS_REGION": true, "AWS_CONFIG_FILE": true, "AWS_SHARED_CREDENTIALS_FILE": true, "AWS_EC2_METADATA_DISABLED": true}
 
 var mntPath = regexp.MustCompile(`^/mnt/[a-z]/`)
 
@@ -138,11 +146,13 @@ func build(goos string, wsl bool, r Request, base []string) (Spec, error) {
 
 	var secrets []string
 	nullSeen := 0
+	seen := map[string]bool{}
 	for _, kv := range r.Secret {
 		key, val, ok := strings.Cut(kv, "=")
-		if !ok || !strings.HasPrefix(key, "AWS_") || strings.ContainsAny(kv, "\r\n\x00") {
+		if !ok || !secretNames[key] || seen[key] || strings.ContainsAny(kv, "\r\n\x00") {
 			return Spec{}, errBadRequest
 		}
+		seen[key] = true
 		switch key {
 		case "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN":
 			if val != "" {
@@ -158,6 +168,9 @@ func build(goos string, wsl bool, r Request, base []string) (Spec, error) {
 	if nullSeen != 2 {
 		return Spec{}, errNullDevice
 	}
+	if len(seen) != len(secretNames) {
+		return Spec{}, errBadRequest
+	}
 	for _, a := range r.Args {
 		for _, s := range secrets {
 			if strings.Contains(a, s) {
@@ -166,7 +179,7 @@ func build(goos string, wsl bool, r Request, base []string) (Spec, error) {
 		}
 	}
 
-	env := make([]string, 0, len(base)+len(r.Secret)+3)
+	env := make([]string, 0, len(base)+len(r.Secret)+len(windowsUnset)+1)
 	for _, kv := range base {
 		key, _, _ := strings.Cut(kv, "=")
 		if strings.HasPrefix(key, "AWS_") || key == "ELECTRON_RUN_AS_NODE" || key == "WSLENV" {
@@ -177,9 +190,9 @@ func build(goos string, wsl bool, r Request, base []string) (Spec, error) {
 	env = append(env, r.Secret...)
 	spec := Spec{Path: in.Path, Args: append([]string(nil), r.Args...)}
 	if in.Place == Windows {
-		// A fresh WSLENV: the user's own list never reaches the client. The
-		// empty profiles become undefined on the Windows side.
-		env = append(env, "AWS_PROFILE=", "AWS_DEFAULT_PROFILE=", "WSLENV="+windowsWSLENV)
+		// A fresh WSLENV: the user's own list never reaches the client.
+		env = append(env, windowsUnset...)
+		env = append(env, "WSLENV="+windowsWSLENV)
 		// A /mnt/<d> working folder avoids cmd's UNC-path warning.
 		spec.Dir = path.Dir(in.Path)
 	}

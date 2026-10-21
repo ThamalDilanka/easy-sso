@@ -12,6 +12,10 @@ import (
 	"github.com/ThamalDilanka/easy-sso/internal/wslinterop"
 )
 
+// runningAfterExit is a seam: tests fake the DataGrip check Start repeats
+// after a quick clean exit.
+var runningAfterExit = func(ctx context.Context, in Install) (bool, error) { return System{}.Running(ctx, in) }
+
 // Start runs the client binary itself (no shell, no open, no xdg-open, no
 // cmd.exe start) in its own session, so it outlives easysso. The client is
 // not owned: it keeps the credentials until it exits.
@@ -43,6 +47,12 @@ func (System) Start(ctx context.Context, r Request) error {
 	select {
 	case err := <-done:
 		if err == nil {
+			// A launcher script (the Linux Toolbox one) can start DataGrip in
+			// the background and exit 0 too. The caller found no DataGrip
+			// before, so one running now is the copy just started.
+			if running, err := runningAfterExit(ctx, r.Install); err == nil && running {
+				return nil
+			}
 			return ErrHandedOver
 		}
 		return ErrClientStopped

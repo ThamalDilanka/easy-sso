@@ -114,7 +114,7 @@ func TestExportCAToWindows(t *testing.T) {
 	}
 	bad := filepath.Join(state, "bad.pem")
 	_ = os.WriteFile(bad, []byte("not a bundle"), 0o600)
-	if _, err = ExportCAToWindows(context.Background(), bad, false); err == nil || !strings.Contains(err.Error(), "CA file unavailable or invalid") {
+	if _, err = ExportCAToWindows(context.Background(), bad, false); err == nil || err.Error() != "CA file unavailable or invalid; select a PEM certificate bundle" {
 		t.Fatalf("invalid source: %v", err)
 	}
 	custom := filepath.Join(state, "my ca.txt")

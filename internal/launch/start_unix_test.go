@@ -24,9 +24,14 @@ func fakeClient(t *testing.T, body string) string {
 
 func startSeams(t *testing.T) **exec.Cmd {
 	t.Helper()
-	oldGoos, oldGetenv, oldStart, oldWait := goos, getenv, startDetached, handoverWait
-	t.Cleanup(func() { goos, getenv, startDetached, handoverWait = oldGoos, oldGetenv, oldStart, oldWait })
+	oldGoos, oldGetenv, oldStart, oldWait, oldRunning := goos, getenv, startDetached, handoverWait, runningAfterExit
+	t.Cleanup(func() {
+		goos, getenv, startDetached, handoverWait, runningAfterExit = oldGoos, oldGetenv, oldStart, oldWait, oldRunning
+	})
 	goos, getenv = "linux", fakeEnv{}.get
+	// No test scans the real /proc: a DataGrip open on this machine must not
+	// change the result.
+	runningAfterExit = func(context.Context, Install) (bool, error) { return false, nil }
 	var captured *exec.Cmd
 	startDetached = func(c *exec.Cmd) error { captured = c; return oldStart(c) }
 	return &captured
@@ -103,5 +108,45 @@ func TestStartDataGripHandover(t *testing.T) {
 	r.Install.Path = filepath.Join(t.TempDir(), "missing")
 	if err := (System{}).Start(ctx, r); err == nil || err != ErrClientStart {
 		t.Fatalf("missing binary = %v", err)
+	}
+}
+
+// The Linux Toolbox script starts DataGrip in the background and exits 0 at
+// once. If DataGrip now runs (the caller checked it did not before), it
+// started with the keys; otherwise the request went to a copy already open.
+func TestStartDataGripQuickExitRechecksRunning(t *testing.T) {
+	startSeams(t)
+	handoverWait = 2 * time.Second
+	script := Install{DataGrip, Local, fakeClient(t, "exit 0")}
+	for name, tc := range map[string]struct {
+		running bool
+		err     error
+		want    error
+	}{
+		"started in background": {running: true, want: nil},
+		"handed over":           {running: false, want: ErrHandedOver},
+		"check failed":          {err: ErrRunningUnknown, want: ErrHandedOver},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var checked []Install
+			runningAfterExit = func(_ context.Context, in Install) (bool, error) {
+				checked = append(checked, in)
+				return tc.running, tc.err
+			}
+			err := System{}.Start(context.Background(), Request{Install: script, Secret: secretEnv("/dev/null")})
+			if err != tc.want {
+				t.Fatalf("Start = %v, want %v", err, tc.want)
+			}
+			if len(checked) != 1 || checked[0] != script {
+				t.Fatalf("running check = %+v, want once for %+v", checked, script)
+			}
+		})
+	}
+	// A failed exit is never rechecked: it stays ErrClientStopped.
+	called := false
+	runningAfterExit = func(context.Context, Install) (bool, error) { called = true; return true, nil }
+	err := System{}.Start(context.Background(), Request{Install: Install{DataGrip, Local, fakeClient(t, "exit 3")}, Secret: secretEnv("/dev/null")})
+	if err != ErrClientStopped || called {
+		t.Fatalf("failed exit = %v, rechecked %v", err, called)
 	}
 }

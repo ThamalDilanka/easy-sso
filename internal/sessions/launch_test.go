@@ -239,6 +239,86 @@ func TestLaunchClientAppRefusesShortLife(t *testing.T) {
 	}
 }
 
+// A managed role with under 30 s left, or expired, fails the Credentials
+// check too; the frozen snapshot's expiry must still be the reason given.
+func TestLaunchClientAppShortLifeBeatsExpiredRole(t *testing.T) {
+	m, run, _, _, _, f := launchManager(t)
+	m.options.RecoveryCredentials = func(string) (domain.ManagedRole, domain.Snapshot, error) {
+		return domain.ManagedRole{}, domain.Snapshot{}, errors.New("role credentials expired")
+	}
+	soon := time.Now().Add(20 * time.Second).UTC()
+	mutate(t, m, run.ID, func(en *entry) { en.snapshot.Expiration = soon })
+	_, err := m.LaunchClientApp(context.Background(), run.ID, localDataGrip)
+	want := "Credentials expire at " + soon.Local().Format("15:04") + "; renew the role and reconnect before launching a client"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if running, starts := f.counts(); running != 0 || starts != 0 {
+		t.Fatal("refused launch reached the launcher", running, starts)
+	}
+}
+
+// A docdb-iam open that reuses a tunnel-mode run leaves it Listening with the
+// docdb-iam connection when the TLS check or the login fails. Its hostname
+// was never verified, so g must refuse it.
+func TestLaunchClientAppNeedsVerifiedTLS(t *testing.T) {
+	for _, mode := range []string{"tls", "login"} {
+		t.Run(mode, func(t *testing.T) {
+			termMode := ""
+			if mode == "login" {
+				termMode = "fail"
+			}
+			m, c, role, s, _, _, _ := docdbManager(t, termMode, false)
+			m.options.RecoveryCredentials = func(string) (domain.ManagedRole, domain.Snapshot, error) { return role, s, nil }
+			f := &fakeLauncher{}
+			m.options.Launcher = f
+			transport := c
+			transport.AuthMode, transport.Database = "", ""
+			tunnel, err := m.Open(context.Background(), transport, role, s)
+			if err != nil || tunnel.State != "Listening" {
+				t.Fatal(tunnel.State, err)
+			}
+			if mode == "tls" {
+				m.verifyTLS = func(context.Context, int, string, string) error {
+					return errors.New("Database TLS verification failed")
+				}
+			}
+			run, err := m.Open(context.Background(), c, role, s)
+			if err == nil || run.ID != tunnel.ID || run.State != "Listening" || !run.Connection.DocDBIAM() {
+				t.Fatal("reuse did not leave a Listening docdb-iam run", run.State, run.Connection.AuthMode, err)
+			}
+			_, err = m.LaunchClientApp(context.Background(), run.ID, localDataGrip)
+			if err == nil || err.Error() != errClientNotOpen.Error() {
+				t.Fatalf("err = %v, want %q", err, errClientNotOpen)
+			}
+			if running, starts := f.counts(); running != 0 || starts != 0 {
+				t.Fatal("unverified run reached the launcher", running, starts)
+			}
+		})
+	}
+	t.Run("verified reuse", func(t *testing.T) {
+		m, c, role, s, _, _, _ := docdbManager(t, "", false)
+		m.options.RecoveryCredentials = func(string) (domain.ManagedRole, domain.Snapshot, error) { return role, s, nil }
+		f := &fakeLauncher{}
+		m.options.Launcher = f
+		transport := c
+		transport.AuthMode, transport.Database = "", ""
+		if _, err := m.Open(context.Background(), transport, role, s); err != nil {
+			t.Fatal(err)
+		}
+		run, err := m.Open(context.Background(), c, role, s)
+		if err != nil || run.State != "Connected" {
+			t.Fatal(run.State, err)
+		}
+		if _, err := m.LaunchClientApp(context.Background(), run.ID, localDataGrip); err != nil {
+			t.Fatal("verified run refused:", err)
+		}
+		if _, starts := f.counts(); starts != 1 {
+			t.Fatal("client not started", starts)
+		}
+	})
+}
+
 func TestLaunchClientAppRefusesOpenDataGrip(t *testing.T) {
 	for name, tc := range map[string]struct {
 		running bool

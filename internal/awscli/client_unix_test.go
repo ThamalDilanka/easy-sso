@@ -4,7 +4,9 @@ package awscli
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -76,5 +78,25 @@ func TestStartCancelEndsWholeProcessGroup(t *testing.T) {
 			t.Fatal("plugin grandchild outlived the cancelled start")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Cancel before the process exists must not dereference it or signal a group.
+// Pid 0 and 1 are not exercised: without the guard they would signal this
+// test's own group or every process the user owns.
+func TestGroupCancelWithoutProcess(t *testing.T) {
+	cmd := exec.Command("true")
+	groupCancel(cmd)
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("Cancel panicked: %v", r)
+			}
+		}()
+		err = cmd.Cancel()
+	}()
+	if !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("Cancel = %v, want os.ErrProcessDone", err)
 	}
 }

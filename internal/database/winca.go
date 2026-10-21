@@ -52,7 +52,7 @@ func ExportCAToWindows(ctx context.Context, src string, refreshOnly bool) (domai
 	var exp domain.CAExport
 	data, err := readCA(src)
 	if err != nil || !validCA(data) {
-		return exp, errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
+		return exp, errors.New(caInvalid)
 	}
 	linux, win, err := wslinterop.Home(ctx, !refreshOnly)
 	if err != nil {

@@ -57,6 +57,9 @@ type entry struct {
 	clientDone    <-chan struct{}
 	keepTunnel    bool
 	clientClosing bool
+	// verified is set only once VerifyTLS passed for the current docdb-iam
+	// connection; a launched client relies on it for the hostname check.
+	verified      bool
 	recovered     bool
 	closedLocally bool
 	recoveryAfter time.Time

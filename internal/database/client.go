@@ -68,7 +68,7 @@ func EnsureCA(ctx context.Context, c domain.Connection, stateDir string) (string
 	if c.CAFile != "" {
 		data, e := os.ReadFile(ca)
 		if e != nil || !validCA(data) {
-			return "", errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
+			return "", errors.New(caInvalid)
 		}
 		return ca, nil
 	}
@@ -119,7 +119,11 @@ func Command(path, ca, id, token string, c domain.Connection) (*exec.Cmd, *Outpu
 
 // tlsFailure is shared by every engine: the CA bundle and the real endpoint are
 // the same inputs whichever client verifies them.
-const tlsFailure = "Database TLS verification failed; check the real RDS endpoint and its CA bundle."
+const tlsFailure = "Database TLS verification failed; check the real database endpoint and its CA bundle."
+
+// caInvalid is shared by every engine; the field is named "CA file" on the
+// DocumentDB form and "RDS CA file" on the PostgreSQL one.
+const caInvalid = "CA file unavailable or invalid; select a PEM certificate bundle"
 
 // Output recognizes the first interactive prompt, emitted only after login.
 // The private nonprinting prompt marker is removed before terminal rendering.

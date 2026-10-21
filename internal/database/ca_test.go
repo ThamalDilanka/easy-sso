@@ -176,7 +176,7 @@ func TestEnsureCAHonoursCAFile(t *testing.T) {
 		t.Fatalf("EnsureCA = %q, %v", got, err)
 	}
 	_, err = EnsureCA(context.Background(), domain.Connection{Partition: "aws", CAFile: filepath.Join(dir, "missing.pem")}, dir)
-	if err == nil || !strings.Contains(err.Error(), "RDS CA file unavailable or invalid") {
+	if err == nil || err.Error() != "CA file unavailable or invalid; select a PEM certificate bundle" {
 		t.Fatalf("invalid CA file: %v", err)
 	}
 }

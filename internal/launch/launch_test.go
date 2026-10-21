@@ -26,7 +26,7 @@ const (
 	testKey     = "ASIATESTKEY"
 	testSecret  = "TOP-SECRET-VALUE"
 	testToken   = "SESSION-TOKEN-VALUE"
-	wantWSLENV  = "AWS_ACCESS_KEY_ID/w:AWS_SECRET_ACCESS_KEY/w:AWS_SESSION_TOKEN/w:AWS_REGION/w:AWS_CONFIG_FILE/w:AWS_SHARED_CREDENTIALS_FILE/w:AWS_EC2_METADATA_DISABLED/w:AWS_PROFILE/w:AWS_DEFAULT_PROFILE/w"
+	wantWSLENV  = "AWS_ACCESS_KEY_ID/w:AWS_SECRET_ACCESS_KEY/w:AWS_SESSION_TOKEN/w:AWS_REGION/w:AWS_CONFIG_FILE/w:AWS_SHARED_CREDENTIALS_FILE/w:AWS_EC2_METADATA_DISABLED/w:AWS_PROFILE/w:AWS_DEFAULT_PROFILE/w:AWS_ROLE_ARN/w:AWS_WEB_IDENTITY_TOKEN_FILE/w:AWS_CONTAINER_CREDENTIALS_FULL_URI/w:AWS_CONTAINER_CREDENTIALS_RELATIVE_URI/w:AWS_CREDENTIAL_EXPIRATION/w"
 	compassArgs = "mongodb://example.invalid:27017/?authMechanism=MONGODB-AWS&tls=true"
 )
 
@@ -91,7 +91,11 @@ func TestBuildEnvPerPlatform(t *testing.T) {
 			env := envMap(t, spec.Env)
 			want := envMap(t, secretEnv(tc.null))
 			if tc.windows {
-				want["AWS_PROFILE"], want["AWS_DEFAULT_PROFILE"] = "", ""
+				// Empty through WSLENV: undefined on the Windows side, so a
+				// Windows-wide setting cannot pick another credential source.
+				for _, k := range []string{"AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CREDENTIAL_EXPIRATION"} {
+					want[k] = ""
+				}
 			}
 			for k, v := range env {
 				if strings.HasPrefix(k, "AWS_") && want[k] != v {
@@ -165,6 +169,35 @@ func TestBuildEnvPerPlatform(t *testing.T) {
 				t.Errorf("%s: secret in error %q", name, err)
 			}
 		}
+	}
+
+	// Secret holds exactly the names awscli.ChildCredentialEnv returns.
+	local := Install{DataGrip, Local, "/opt/datagrip/bin/datagrip.sh"}
+	without := func(key string) []string {
+		var out []string
+		for _, kv := range secretEnv("/dev/null") {
+			if !strings.HasPrefix(kv, key+"=") {
+				out = append(out, kv)
+			}
+		}
+		return out
+	}
+	for name, secret := range map[string][]string{
+		"extra AWS_PROFILE":           append(secretEnv("/dev/null"), "AWS_PROFILE=ambient"),
+		"extra AWS_ROLE_ARN":          append(secretEnv("/dev/null"), "AWS_ROLE_ARN=ambient-role"),
+		"duplicate AWS_REGION":        append(secretEnv("/dev/null"), "AWS_REGION=eu-west-1"),
+		"duplicate AWS_ACCESS_KEY_ID": append(secretEnv("/dev/null"), "AWS_ACCESS_KEY_ID=OTHERKEY"),
+		"missing AWS_SESSION_TOKEN":   without("AWS_SESSION_TOKEN"),
+		"missing AWS_EC2_METADATA":    without("AWS_EC2_METADATA_DISABLED"),
+		"missing AWS_REGION":          without("AWS_REGION"),
+	} {
+		spec, err := build("linux", false, Request{Install: local, Secret: secret}, ambientEnv())
+		if !errors.Is(err, errBadRequest) {
+			t.Errorf("%s: err = %v, want errBadRequest (path %q)", name, err, spec.Path)
+		}
+	}
+	if _, err := build("linux", false, Request{Install: local, Secret: secretEnv("/dev/null")}, ambientEnv()); err != nil {
+		t.Errorf("exactly the child names: %v", err)
 	}
 }
 

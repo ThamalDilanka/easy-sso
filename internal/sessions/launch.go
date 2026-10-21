@@ -69,17 +69,24 @@ func (m *Manager) LaunchClientApp(ctx context.Context, runID string, in launch.I
 	}
 	// The run's own frozen snapshot, never the Credentials view's current one.
 	en.mu.Lock()
-	run, snapshot, owned, recovered := copyRun(en.run), en.snapshot, en.child != nil, en.recovered
+	run, snapshot, owned, recovered, verified := copyRun(en.run), en.snapshot, en.child != nil, en.recovered, en.verified
 	en.mu.Unlock()
 	c := run.Connection
 	if c.Kind != "db" || !c.DocDBIAM() {
 		return time.Time{}, errClientNotIAM
 	}
-	if run.State != "Listening" && run.State != "Connected" {
+	// The client skips the hostname check on 127.0.0.1; only a run whose
+	// TLS check passed makes up for that.
+	if (run.State != "Listening" && run.State != "Connected") || !verified {
 		return time.Time{}, errClientNotOpen
 	}
 	if !owned || recovered || snapshot.AccessKeyID == "" {
 		return time.Time{}, errClientNotOwned
+	}
+	// The frozen snapshot's expiry comes first: a role that is nearly
+	// expired also fails the Credentials check below, with the wrong reason.
+	if time.Until(snapshot.Expiration) < clientMinLife {
+		return time.Time{}, clientExpiry(snapshot)
 	}
 	// A removed or unpublished role starts no new client, even from its own
 	// frozen snapshot.
@@ -96,7 +103,7 @@ func (m *Manager) LaunchClientApp(ctx context.Context, runID string, in launch.I
 	secret, err := awscli.ChildCredentialEnv(snapshot, c.Region, null, clientMinLife)
 	if err != nil {
 		if time.Until(snapshot.Expiration) < clientMinLife {
-			return time.Time{}, errors.New("Credentials expire at " + snapshot.Expiration.Local().Format("15:04") + "; renew the role and reconnect before launching a client")
+			return time.Time{}, clientExpiry(snapshot)
 		}
 		return time.Time{}, err
 	}
@@ -126,6 +133,11 @@ func (m *Manager) LaunchClientApp(ctx context.Context, runID string, in launch.I
 		return time.Time{}, err
 	}
 	return snapshot.Expiration, nil
+}
+
+// clientExpiry is the fixed refusal for credentials that expire too soon.
+func clientExpiry(s domain.Snapshot) error {
+	return errors.New("Credentials expire at " + s.Expiration.Local().Format("15:04") + "; renew the role and reconnect before launching a client")
 }
 
 // clientCA returns the CA path the client reads: the cached bundle, or for a

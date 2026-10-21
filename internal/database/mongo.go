@@ -39,6 +39,8 @@ const mongoHomeMaxAge = 24 * time.Hour
 var (
 	mongoVersionRE = regexp.MustCompile(`^\s*(\d+)\.(\d+)\.(\d+)`)
 	mongoRunIDRE   = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+	// mongoDatabaseRE is the connections rule, checked again before the URI is built.
+	mongoDatabaseRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,63}$`)
 )
 
 // PrepareMongo resolves mongosh, enforces the version floor and readies the CA
@@ -156,6 +158,10 @@ func MongoCommand(path, ca, home, id string, s domain.Snapshot, c domain.Connect
 	if !mongoRunIDRE.MatchString(id) {
 		return nil, nil, errors.New("invalid run id for the database terminal")
 	}
+	// An @, / or ? in the name could re-split the URI below.
+	if c.Database != "" && !mongoDatabaseRE.MatchString(c.Database) {
+		return nil, nil, errors.New("DocumentDB database name may use only letters, digits, _ and -")
+	}
 	creds, err := awscli.ChildCredentialEnv(s, c.Region, os.DevNull, 30*time.Second)
 	if err != nil {
 		return nil, nil, err
@@ -199,7 +205,7 @@ func VerifyTLS(ctx context.Context, port int, endpoint, ca string) error {
 	data, err := readCA(ca)
 	pool := x509.NewCertPool()
 	if err != nil || !pool.AppendCertsFromPEM(data) {
-		return errors.New("RDS CA file unavailable or invalid; select a PEM certificate bundle")
+		return errors.New(caInvalid)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
