@@ -10,11 +10,17 @@ mode = json.loads((root/'mode.json').read_text()) if (root/'mode.json').exists()
 def arg(name, default=''):
     return args[args.index(name)+1] if name in args else default
 def transaction(fn):
-    with open(root/'sessions.json', 'a+') as f:
-        fcntl.flock(f, fcntl.LOCK_EX); f.seek(0)
-        text=f.read(); data=json.loads(text) if text else []
-        result=fn(data); f.seek(0); f.truncate(); json.dump(data,f); f.flush()
-        fcntl.flock(f, fcntl.LOCK_UN); return result
+    # Lock a stable file and publish with an atomic replace: a start-session
+    # poller killed mid-write must never leave an empty sessions.json behind.
+    path=root/'sessions.json'
+    with open(root/'sessions.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        text=path.read_text() if path.exists() else ''
+        data=json.loads(text) if text else []
+        result=fn(data); new=json.dumps(data)
+        if new!=text:
+            tmp=root/'sessions.json.tmp'; tmp.write_text(new); os.replace(tmp,path)
+        return result
 with open(root/'calls.jsonl','a') as f:
     json.dump({'args':args,'ambientProvider':any(k in os.environ for k in ['AWS_PROFILE','AWS_DEFAULT_PROFILE','AWS_ROLE_ARN','AWS_WEB_IDENTITY_TOKEN_FILE','AWS_ENDPOINT_URL'])},f); f.write('\n')
 def identity(key):
