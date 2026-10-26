@@ -20,6 +20,7 @@ type testTerminals struct {
 	scrolled []int
 	position [2]int
 	exited   map[string]bool
+	text     map[string]string
 }
 
 func (t *testTerminals) Scroll(_ string, lines int) error {
@@ -36,6 +37,12 @@ func (t *testTerminals) Wheel(id string, up bool, x, y int) error {
 }
 func (t *testTerminals) ScrollPosition(string) (int, int) { return t.position[0], t.position[1] }
 func (t *testTerminals) Exited(id string) bool            { return t.exited[id] }
+func (t *testTerminals) Text(id string) (string, error) {
+	if text, ok := t.text[id]; ok {
+		return text, nil
+	}
+	return "", errors.New("terminal is not embedded in this workspace")
+}
 
 func (t *testTerminals) Has(id string) bool { _, ok := t.frames[id]; return ok }
 func (t *testTerminals) Frame(id string, w, h int, focused bool) (string, error) {

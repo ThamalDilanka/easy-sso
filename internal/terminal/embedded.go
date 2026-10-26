@@ -340,6 +340,30 @@ func (e *Embedded) ScrollPosition(id string) (offset, history int) {
 	return s.offset, s.emu.ScrollbackLen()
 }
 
+// Text exports the whole tab as plain text: every retained line and the live
+// screen, independent of the viewport. A full-screen application keeps no
+// history, so there only its visible screen is exported. Ended tabs keep
+// their contents until closed.
+func (e *Embedded) Text(id string) (string, error) {
+	s, err := e.get(id)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var lines []string
+	if !s.emu.IsAltScreen() {
+		for _, line := range s.emu.Scrollback().Lines() {
+			lines = append(lines, line.String())
+		}
+	}
+	lines = append(lines, strings.Split(s.emu.String(), "\n")...)
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n"), nil
+}
+
 // Send delivers input and returns the viewport to live output first, so the
 // user always sees the shell react to what they typed.
 func (e *Embedded) Send(id, key, text string, paste bool) error {

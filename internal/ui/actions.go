@@ -37,6 +37,10 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 			}
 			return m.scrollTerminal(lines, false, 0, 0)
 		}
+		// Alt+C never reaches the shell; ended tabs stay copyable until closed.
+		if !k.Paste && key == "alt+c" {
+			return m.copyTerminal(run)
+		}
 		if run.Connection.Kind == "ec2" && m.terminalEnded(run) {
 			if m.reconnecting(run) {
 				if key == "esc" && m.cancel != nil {

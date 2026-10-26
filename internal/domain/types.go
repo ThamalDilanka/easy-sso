@@ -183,6 +183,8 @@ type TerminalService interface {
 	ScrollPosition(string) (int, int)
 	// Exited reports that the owned process behind a screen has finished.
 	Exited(string) bool
+	// Text exports all retained output and the live screen as plain text.
+	Text(string) (string, error)
 }
 
 // CAExport describes a CA bundle copied for Windows clients. Exists is false

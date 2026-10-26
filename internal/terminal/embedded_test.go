@@ -265,3 +265,49 @@ func TestAlternateScreenGesturesGoToApplication(t *testing.T) {
 	typeText(t, e, "alt", "q")
 	waitFrame(t, e, "alt", "READY> seq 1 100 | less --mouse", 80, 20)
 }
+
+func TestTextIncludesAllHistoryAndSurvivesExit(t *testing.T) {
+	e, err := NewEmbedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := testScreen(t, "text", e)
+	typeText(t, e, "text", "seq 1 200\n")
+	waitFrame(t, e, "text", "\n200\n", 80, 20)
+	// The viewport position must not limit what is exported.
+	if err := e.Scroll("text", 5); err != nil {
+		t.Fatal(err)
+	}
+	text, err := e.Text("text")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(text, "READY> seq 1 200\n1\n2\n") || !strings.Contains(text, "\n199\n200\nREADY>") {
+		t.Fatalf("history or screen missing: %q", text)
+	}
+	if strings.Contains(text, "\x1b") || strings.Contains(text, " \n") || strings.HasSuffix(text, "\n") {
+		t.Fatalf("text not plain and trimmed: %q", text)
+	}
+	if offset, _ := e.ScrollPosition("text"); offset != 5 {
+		t.Fatal("export moved the viewport")
+	}
+	typeText(t, e, "text", "seq 1 100 | less\n")
+	waitFrame(t, e, "text", "\n19\n", 80, 20)
+	if text, _ = e.Text("text"); !strings.HasPrefix(text, "1\n2\n") || strings.Contains(text, "READY>") {
+		t.Fatalf("alternate screen export should be the visible screen: %q", text)
+	}
+	typeText(t, e, "text", "q")
+	waitFrame(t, e, "text", "READY> seq 1 100 | less", 80, 20)
+	typeText(t, e, "text", "exit\n")
+	select {
+	case <-screen.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("shell did not exit")
+	}
+	if text, err = e.Text("text"); err != nil || !strings.HasPrefix(text, "READY> seq 1 200\n1\n") {
+		t.Fatalf("ended tab lost its history: %v %q", err, text)
+	}
+	if _, err := e.Text("missing"); err == nil {
+		t.Fatal("unknown tab exported")
+	}
+}

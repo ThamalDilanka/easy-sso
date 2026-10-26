@@ -40,6 +40,44 @@ func (m *Model) scrollTerminal(lines int, wheel bool, x, y int) tea.Cmd {
 	return nil
 }
 
+// copyTerminal puts the whole tab, not just the viewport, on the clipboard as
+// plain text. Status messages report a line count only, never the contents.
+func (m *Model) copyTerminal(run domain.Run) tea.Cmd {
+	text, err := m.services.Terminals.Text(run.ID)
+	if err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	if strings.TrimSpace(text) == "" {
+		m.status = "Nothing to copy yet."
+		return nil
+	}
+	lines := strings.Count(text, "\n") + 1
+	unit := "lines"
+	if lines == 1 {
+		unit = "line"
+	}
+	copy := m.copyText()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := copy(ctx, text); err != nil {
+			return clipboardMsg{"Could not copy the terminal to the clipboard."}
+		}
+		return clipboardMsg{fmt.Sprintf("Copied %d %s from %s to the clipboard.", lines, unit, run.Connection.Name)}
+	}
+}
+
+// fitHint returns the first hint that fits the width, else the last one.
+func fitHint(width int, hints ...string) string {
+	for _, hint := range hints {
+		if lipgloss.Width(hint) <= width {
+			return hint
+		}
+	}
+	return hints[len(hints)-1]
+}
+
 // terminalEnded reports a tab whose shell has stopped: the run record says so,
 // or the owned PTY already exited ahead of the next sessions refresh.
 func (m *Model) terminalEnded(run domain.Run) bool {
@@ -198,14 +236,20 @@ func (m *Model) terminalView() string {
 		lines = append(lines, m.paint(padLine("  "+action, m.width), p.orange, p.background, false))
 	}
 	lines = append(lines, m.terminalPane(run, m.width, max(1, m.height-len(lines)-1), 0, len(lines))...)
-	hint := "Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history"
+	// Narrow screens drop the tab and AWS shortcuts before the copy shortcut.
+	hint := fitHint(m.width,
+		"Shift+Tab: next tab | Ctrl+]: AWS | Ctrl+W: close | Alt+PgUp/PgDn: history | Alt+C: copy all",
+		"Ctrl+W: close | Alt+PgUp/PgDn: history | Alt+C: copy all")
 	if ended && m.reconnecting(run) {
 		hint = m.reconnectingLabel()
 	} else if ended {
-		hint = "r / Enter: reconnect | Ctrl+W: close | Ctrl+]: AWS | Alt+PgUp/PgDn: history"
+		hint = fitHint(m.width,
+			"r / Enter: reconnect | Ctrl+W: close | Ctrl+]: AWS | Alt+PgUp/PgDn: history | Alt+C: copy all",
+			"r / Enter: reconnect | Ctrl+W: close | Alt+PgUp/PgDn: history | Alt+C: copy all")
 	}
 	if offset, history := m.services.Terminals.ScrollPosition(run.ID); offset > 0 {
 		hint = fmt.Sprintf("History: %d of %d lines above | any key: back to live | Alt+PgUp/PgDn: scroll", offset, history)
+		hint = fitHint(m.width, hint+" | Alt+C: copy all", hint)
 	}
 	lines = append(lines, m.paint(padLine(ansi.Truncate(hint, m.width, "…"), m.width), p.muted, p.surface, false))
 	return strings.Join(lines, "\n")
