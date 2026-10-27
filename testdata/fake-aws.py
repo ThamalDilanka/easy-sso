@@ -57,6 +57,10 @@ if args[:2]==['ssm','start-session']:
     if mode.get('startDenied'):sys.exit(1)
     sid='session-'+arg('--reason').split(':')[-1]
     params=json.loads(arg('--parameters','{}'))
+    if mode.get('rejectHost') and 'host' in params:
+        # A fixed-destination document declares only localPortNumber.
+        print('An error occurred (InvalidParameters) when calling the StartSession operation: Parameter "host" is not defined in the document.',file=sys.stderr)
+        sys.exit(254)
     listener=None
     if params and mode.get('pluginGrandchild'):
         # Like the real plugin: a grandchild in the aws process group holds the

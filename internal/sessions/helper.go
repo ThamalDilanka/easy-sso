@@ -336,7 +336,7 @@ func (m *Manager) persistTunnel(en *entry) {
 }
 
 func sameBinding(a, b domain.Run) bool {
-	return a.ID == b.ID && a.Connection.Kind == b.Connection.Kind && a.Connection.AccountID == b.Connection.AccountID && a.Connection.Partition == b.Connection.Partition && a.Connection.Region == b.Connection.Region && a.Connection.RelayRegion == b.Connection.RelayRegion && a.Connection.InstanceID == b.Connection.InstanceID && a.Connection.DocumentName == b.Connection.DocumentName && a.Connection.RelayInstanceID == b.Connection.RelayInstanceID && a.Connection.Endpoint == b.Connection.Endpoint && a.Connection.DBPort == b.Connection.DBPort && a.Connection.LocalPort == b.Connection.LocalPort && a.Connection.AuthMode == b.Connection.AuthMode && a.Connection.Database == b.Connection.Database && a.Connection.DBUser == b.Connection.DBUser && a.Connection.CAFile == b.Connection.CAFile && reflect.DeepEqual(a.Profile, b.Profile) && a.Alias == b.Alias && a.Identity == b.Identity && a.Expiration.Equal(b.Expiration) && a.StartedAt.Equal(b.StartedAt) && a.Title == b.Title && (a.SessionID == "" || a.SessionID == b.SessionID)
+	return a.ID == b.ID && a.Connection.Kind == b.Connection.Kind && a.Connection.AccountID == b.Connection.AccountID && a.Connection.Partition == b.Connection.Partition && a.Connection.Region == b.Connection.Region && a.Connection.RelayRegion == b.Connection.RelayRegion && a.Connection.InstanceID == b.Connection.InstanceID && a.Connection.DocumentName == b.Connection.DocumentName && a.Connection.FixedDestination == b.Connection.FixedDestination && a.Connection.RelayInstanceID == b.Connection.RelayInstanceID && a.Connection.Endpoint == b.Connection.Endpoint && a.Connection.DBPort == b.Connection.DBPort && a.Connection.LocalPort == b.Connection.LocalPort && a.Connection.AuthMode == b.Connection.AuthMode && a.Connection.Database == b.Connection.Database && a.Connection.DBUser == b.Connection.DBUser && a.Connection.CAFile == b.Connection.CAFile && reflect.DeepEqual(a.Profile, b.Profile) && a.Alias == b.Alias && a.Identity == b.Identity && a.Expiration.Equal(b.Expiration) && a.StartedAt.Equal(b.StartedAt) && a.Title == b.Title && (a.SessionID == "" || a.SessionID == b.SessionID)
 }
 func validateBinding(r domain.Run) error {
 	if !uuidPattern.MatchString(r.ID) || r.Connection.AccountID != r.Identity.Account || r.Connection.Partition != r.Profile.Partition || !connections.CompatibleRegion(r.Connection.Partition, r.Connection.Region) || (r.Connection.Kind == "db" && !connections.CompatibleRegion(r.Connection.Partition, r.Connection.RelayRegion)) {
@@ -355,6 +355,10 @@ type startupDiagnostic struct {
 	tail     string
 	denied   bool
 	document string
+	// fixed is set when the tunnel sends only the local port.
+	fixed             bool
+	hostUndefined     bool
+	invalidParameters bool
 }
 
 func (d *startupDiagnostic) Write(p []byte) (int, error) {
@@ -363,6 +367,12 @@ func (d *startupDiagnostic) Write(p []byte) (int, error) {
 	text := d.tail + string(p)
 	if strings.Contains(text, "AccessDeniedException") {
 		d.denied = true
+	}
+	if strings.Contains(text, `Parameter "host" is not defined`) {
+		d.hostUndefined = true
+	}
+	if strings.Contains(text, "(InvalidParameters)") {
+		d.invalidParameters = true
 	}
 	const limit = 128
 	if len(text) > limit {
@@ -393,6 +403,16 @@ func (d *startupDiagnostic) tunnelFailure() string {
 			document = connections.DefaultTunnelDocument
 		}
 		return "Access denied: the selected profile cannot start this database tunnel. Check ssm:StartSession access to the relay and the " + document + " document, or select an authorized profile. Database login was not attempted."
+	}
+	// Only a custom document can fix or require the destination.
+	if d.document == "" || d.document == connections.DefaultTunnelDocument {
+		return ""
+	}
+	if !d.fixed && d.hostUndefined {
+		return "The " + d.document + " document fixes the destination. Edit the bookmark (e), set Destination to fixed, and save. Database login was not attempted."
+	}
+	if d.fixed && d.invalidParameters {
+		return "The " + d.document + " document needs the host and port. Edit the bookmark (e), set Destination to request, and save. Database login was not attempted."
 	}
 	return ""
 }

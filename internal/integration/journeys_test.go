@@ -169,6 +169,60 @@ func TestDocumentDBTunnelJourney(t *testing.T) {
 	listener.Close()
 }
 
+// A document that fixes its destination rejects a "host" parameter. Without
+// the flag the failure is explained; with it the tunnel sends only the local
+// port and listens.
+func TestFixedDestinationTunnelJourney(t *testing.T) {
+	h := setup(t)
+	h.activate(t)
+	h.mode(t, map[string]any{"rejectHost": true})
+	role, snap, e := h.roles.Snapshot("tui-one")
+	if e != nil {
+		t.Fatal(e)
+	}
+	m := newManager(t, h, nil)
+	ctx := context.Background()
+	c := db(availablePort(t))
+	c.DocumentName = "Example-FixedDocument"
+	_, _ = m.Open(ctx, c, role, snap)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		runs := m.List()
+		if len(runs) == 1 && strings.Contains(runs[0].Error, "set Destination to fixed") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("unflagged tunnel never explained the rejected host: %+v", runs)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.FixedDestination = true
+	c.LocalPort = availablePort(t)
+	run, e := m.Open(ctx, c, role, snap)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if run.State != "Listening" || run.SessionID == "" {
+		t.Fatal(run)
+	}
+	calls, _ := os.ReadFile(filepath.Join(h.dir, "calls.jsonl"))
+	for _, want := range []string{"Example-FixedDocument", "localPortNumber"} {
+		if !bytes.Contains(calls, []byte(want)) {
+			t.Fatalf("start call lacks %s", want)
+		}
+	}
+	lines := bytes.Split(bytes.TrimSpace(calls), []byte("\n"))
+	var last []byte
+	for _, l := range lines {
+		if bytes.Contains(l, []byte("start-session")) {
+			last = l
+		}
+	}
+	if last == nil || bytes.Contains(last, []byte(`\"host\"`)) {
+		t.Fatalf("fixed start call sent a host: %s", last)
+	}
+}
+
 func newManager(t *testing.T, h *harness, adapter terminal.Adapter) *sessions.Manager {
 	t.Helper()
 	m, e := sessions.NewWithOptions(h.cli, h.state, "unused-test-executable", h.bookmarks, sessions.Options{Terminal: adapter, Attempts: 80, Interval: 25 * time.Millisecond})
