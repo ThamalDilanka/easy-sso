@@ -216,6 +216,8 @@ const { chromium } = require(
     assert.equal(await field(7).inputValue(), "tunnel");
     await has(pane, "Cluster endpoint (host)");
     await has(pane, "Tunnel document (optional)");
+    await has(pane, "Destination (request / fixed)");
+    assert.equal(await field(11).inputValue(), "request");
     assert.equal((await pane.innerText()).includes("username"), false);
     await field(7).press("Escape");
     // The PostgreSQL form keeps its defaults and only hints at DocumentDB.
@@ -232,7 +234,56 @@ const { chromium } = require(
     assert.equal(await field(3).inputValue(), "5432");
     assert.equal(await field(7).inputValue(), "postgres-iam");
     await has(pane, "Tunnel document (optional)");
+    await has(pane, "Destination (request / fixed)");
+    assert.equal(await field(12).inputValue(), "request");
     await field(7).press("Escape");
+
+    // Fixed destination: spelling, validation, display and the TLS note.
+    await action("n");
+    await action("d");
+    await field(0).fill("Example fixed");
+    await field(1).fill(
+      "example-fixed.cluster-c0example.us-east-1.docdb.amazonaws.com",
+    );
+    await field(4).fill("i-0123456789abcdef0");
+    await field(11).fill("yes");
+    await field(11).press("Enter");
+    await has(status, "Choose request or fixed for the destination.");
+    await field(11).fill("");
+    await field(11).press("Enter");
+    await has(status, "Choose request or fixed for the destination.");
+    await field(11).fill("FIXED");
+    await field(11).press("Enter");
+    await has(status, "a fixed destination needs a tunnel document");
+    await field(10).fill("Example-FixedDocument");
+    await field(11).fill("  Fixed  ");
+    await field(11).press("Enter");
+    await has(pane, "Review connection");
+    await has(pane, "Example-FixedDocument (fixed destination)");
+    await has(
+      pane,
+      "Destination fixed by Example-FixedDocument; easy-sso cannot confirm it is this endpoint. Your client's TLS check can.",
+    );
+    // IAM checks the endpoint itself, so the note goes away with it.
+    await action("e");
+    assert.equal(await field(11).inputValue(), "fixed");
+    await field(7).fill("docdb-iam");
+    await field(11).press("Enter");
+    await has(pane, "Example-FixedDocument (fixed destination)");
+    assert.equal((await pane.innerText()).includes("cannot confirm"), false);
+    // Import previews name the flag.
+    assert.equal(
+      await page.evaluate(() =>
+        importSummary({
+          name: "Example fixed",
+          account: "111122223333",
+          region: "us-east-1",
+          document: "Example-FixedDocument",
+          fixedDestination: true,
+        }),
+      ),
+      "Example fixed | 111122223333 | us-east-1 | document Example-FixedDocument (fixed destination)",
+    );
 
     // DocumentDB IAM: the IAM guide, a simulated mongosh login with the run's
     // role, and g starting DataGrip or Compass from the client picker.

@@ -897,9 +897,10 @@
           ["dbUser", "Database username (IAM)"],
           ["ca", "RDS CA file (blank: automatic)"],
           ["document", "Tunnel document (optional)"],
+          ["destination", "Destination (request / fixed)"],
         ],
         // Shares positions 0-6 with db; only the login fields differ. The
-        // optional tunnel document is last in both.
+        // optional tunnel document and its destination mode are last in both.
         docdb: [
           ["name", "Display name"],
           ["endpoint", "Cluster endpoint (host)"],
@@ -912,6 +913,7 @@
           ["database", "Database (optional, IAM)"],
           ["ca", "CA file (blank: automatic)"],
           ["document", "Tunnel document (optional)"],
+          ["destination", "Destination (request / fixed)"],
         ],
       };
       let state,
@@ -1424,6 +1426,8 @@
           if (arn && (arn[1] !== c.partition || arn[2] !== c.region))
             return "Session document ARN must be in the bookmark's partition and region.";
         }
+        if (c.kind === "db" && c.fixedDestination && !c.document)
+          return "a fixed destination needs a tunnel document";
         if (c.kind === "db" && c.document) {
           const arn =
             /^arn:(aws|aws-cn|aws-us-gov):ssm:([a-z]{2}(?:-[a-z]+)+-\d+):\d{12}:document\/([A-Za-z0-9_.-]{3,128})$/.exec(
@@ -1657,7 +1661,7 @@
             kind,
             engine,
             fields: connectionFields[engine === "documentdb" ? "docdb" : kind],
-            data: copy(
+            data: withDestination(
               connection || {
                 kind,
                 name: "",
@@ -1675,6 +1679,7 @@
                 database: "",
                 dbUser: "",
                 ca: "",
+                destination: "request",
               },
             ),
             original: !!connection?.id,
@@ -1692,6 +1697,13 @@
             "Enter the database name and database username. Ctrl+S saves login settings.";
         }
         render();
+      }
+      // The form edits the destination as text; the bookmark stores a flag.
+      function withDestination(c) {
+        const data = copy(c);
+        if (data.kind === "db")
+          data.destination = data.fixedDestination ? "fixed" : "request";
+        return data;
       }
       function newDatabaseForm(engine) {
         state.review = null;
@@ -1720,6 +1732,7 @@
               database: "",
               dbUser: "",
               ca: "",
+              destination: "request",
             },
             original: false,
             index: 0,
@@ -1788,7 +1801,15 @@
           const c = copy(f.data);
           for (const key of Object.keys(c))
             if (typeof c[key] === "string") c[key] = c[key].trim();
-          if (c.kind === "db") c.endpoint = c.endpoint.toLowerCase();
+          if (c.kind === "db") {
+            c.endpoint = c.endpoint.toLowerCase();
+            // Mirrors readDatabaseForm: the value is trimmed and lowercased.
+            const destination = String(c.destination ?? "").toLowerCase();
+            delete c.destination;
+            if (destination === "fixed") c.fixedDestination = true;
+            else if (destination === "request") delete c.fixedDestination;
+            else return note("Choose request or fixed for the destination.");
+          }
           if (f.engine === "documentdb") {
             if (!isDocumentDB(c))
               return note(
@@ -2399,8 +2420,25 @@
           c.account +
           " | " +
           esc(c.region) +
-          (c.document ? " | document " + esc(c.document) : "")
+          (c.document ? " | document " + esc(documentLabel(c)) : "")
         );
+      }
+      // Mirrors documentLabel: a fixed destination is named on the document.
+      function documentLabel(c) {
+        return c.document && c.fixedDestination
+          ? c.document + " (fixed destination)"
+          : c.document;
+      }
+      // Mirrors unverifiedDestination: IAM logins check the endpoint themselves.
+      function connectionSection(c) {
+        const note =
+          c.kind === "db" &&
+          c.fixedDestination &&
+          c.auth !== "postgres-iam" &&
+          c.auth !== "docdb-iam"
+            ? `<p class="notice">${esc(`Destination fixed by ${c.document}; easy-sso cannot confirm it is this endpoint. Your client's TLS check can.`)}</p>`
+            : "";
+        return section("CONNECTION", connectionRows(c)) + note;
       }
       function section(title, rows) {
         return `<div class="detail-heading">${esc(title)}</div><hr class="section-rule">${kv(rows)}`;
@@ -2463,7 +2501,7 @@
           ["SSM region", c.relayRegion],
           [
             "Document",
-            c.document ||
+            documentLabel(c) ||
               "AWS-StartPortForwardingSessionToRemoteHost (default)",
           ],
           ["Local route", routeHost(c) + ":" + c.localPort],
@@ -2601,7 +2639,7 @@
               ? [["DB user", roleARN(r.profile)]]
               : []),
           ]) +
-          section("CONNECTION", connectionRows(r.connection)) +
+          connectionSection(r.connection) +
           (isDocumentDB(r.connection) && activeTunnel(r)
             ? r.connection.auth === "docdb-iam"
               ? documentDBIAMClientHTML(
@@ -2708,7 +2746,7 @@
         } else if (r.kind === "connection") {
           title = r.details ? "Connection details" : "Review connection";
           body =
-            section("CONNECTION", connectionRows(r.connection)) +
+            connectionSection(r.connection) +
             section("IDENTITY", identityRows(currentProfile()));
           if (r.connection.auth === "docdb-iam") {
             // A bookmark review has no run yet: the selected profile's active
