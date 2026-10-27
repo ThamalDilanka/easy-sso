@@ -221,17 +221,8 @@
               "relayRegion"
             ],
             "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "instanceId"
-                  ]
-                },
-                {
-                  "required": [
-                    "documentName"
-                  ]
-                }
+              "required": [
+                "instanceId"
               ]
             }
           }

@@ -333,11 +333,19 @@ func target(c domain.Connection) string {
 	}
 	return c.InstanceID
 }
+
+// tunnelDocument is the bookmark's tunnel document, or the AWS default.
+func tunnelDocument(c domain.Connection) string {
+	if c.DocumentName != "" {
+		return c.DocumentName
+	}
+	return connections.DefaultTunnelDocument
+}
 func arguments(r domain.Run) []string {
 	a := []string{"ssm", "start-session", "--target", target(r.Connection), "--region", region(r.Connection), "--reason", "easy-sso:" + r.ID}
 	if r.Connection.Kind == "db" {
 		b, _ := json.Marshal(map[string][]string{"host": {r.Connection.Endpoint}, "portNumber": {strconv.Itoa(r.Connection.DBPort)}, "localPortNumber": {strconv.Itoa(r.Connection.LocalPort)}})
-		a = append(a, "--document-name", "AWS-StartPortForwardingSessionToRemoteHost", "--parameters", string(b))
+		a = append(a, "--document-name", tunnelDocument(r.Connection), "--parameters", string(b))
 	} else if r.Connection.DocumentName != "" {
 		a = append(a, "--document-name", r.Connection.DocumentName)
 	}
@@ -357,7 +365,7 @@ func (m *Manager) openTunnel(ctx context.Context, en *entry) error {
 	en.mu.Unlock()
 	m.set(en, "Starting", "")
 	life, cancel := context.WithCancel(context.Background())
-	diagnostic := &startupDiagnostic{}
+	diagnostic := &startupDiagnostic{document: tunnelDocument(frozen.Connection)}
 	child, e := m.cli.Start(life, snapshot, arguments(frozen), nil, diagnostic, diagnostic)
 	if e != nil {
 		cancel()

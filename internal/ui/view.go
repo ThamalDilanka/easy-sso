@@ -508,21 +508,21 @@ func (m *Model) reviewContent() []string {
 	return lines
 }
 
-// importSummary names a custom session document, so an import cannot quietly
-// change which document a shell runs.
+// importSummary names a custom session or tunnel document, so an import
+// cannot quietly change which document a shell or tunnel runs.
 func importSummary(c domain.Connection) string {
 	line := c.Name + " | " + c.AccountID + " | " + c.Region
-	if c.Kind == "ec2" && c.DocumentName != "" {
+	if c.DocumentName != "" {
 		line += " | document " + c.DocumentName
 	}
 	return line
 }
 
 // conflictSummary shows when replacing a local bookmark with the same ID would
-// change its session document, including removing it.
+// change its session or tunnel document, including removing it.
 func conflictSummary(c domain.Connection, existing []domain.Connection) string {
 	for _, local := range existing {
-		if local.ID == c.ID && local.Kind == "ec2" && local.DocumentName != c.DocumentName {
+		if local.ID == c.ID && local.Kind == c.Kind && local.DocumentName != c.DocumentName {
 			return c.Name + " | " + c.AccountID + " | " + c.Region + " | document " + documentLabel(local) + " -> " + documentLabel(c)
 		}
 	}

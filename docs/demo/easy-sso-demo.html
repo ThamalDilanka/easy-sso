@@ -896,8 +896,10 @@
           ["database", "Database name (IAM)"],
           ["dbUser", "Database username (IAM)"],
           ["ca", "RDS CA file (blank: automatic)"],
+          ["document", "Tunnel document (optional)"],
         ],
-        // Shares positions 0-6 with db; only the login fields differ.
+        // Shares positions 0-6 with db; only the login fields differ. The
+        // optional tunnel document is last in both.
         docdb: [
           ["name", "Display name"],
           ["endpoint", "Cluster endpoint (host)"],
@@ -909,6 +911,7 @@
           ["auth", "Auth (tunnel / docdb-iam)"],
           ["database", "Database (optional, IAM)"],
           ["ca", "CA file (blank: automatic)"],
+          ["document", "Tunnel document (optional)"],
         ],
       };
       let state,
@@ -1160,6 +1163,7 @@
                 c.auth,
                 c.auth === "tunnel" ? "" : c.database,
                 c.auth === "postgres-iam" ? c.dbUser : "",
+                ...(c.document ? [c.document] : []),
               ],
         );
       }
@@ -1419,6 +1423,33 @@
             return `${name} is not a shell session document; leave the field blank or use a shell document.`;
           if (arn && (arn[1] !== c.partition || arn[2] !== c.region))
             return "Session document ARN must be in the bookmark's partition and region.";
+        }
+        if (c.kind === "db" && c.document) {
+          const arn =
+            /^arn:(aws|aws-cn|aws-us-gov):ssm:([a-z]{2}(?:-[a-z]+)+-\d+):\d{12}:document\/([A-Za-z0-9_.-]{3,128})$/.exec(
+              c.document,
+            );
+          const name = arn ? arn[3] : c.document;
+          if (!arn && !/^[A-Za-z0-9_.-]{3,128}$/.test(c.document))
+            return "Tunnel document must be a document name (3-128 letters, digits, _ . -) or a full SSM document ARN.";
+          if (
+            !arn &&
+            name.toLowerCase() ===
+              "aws-startportforwardingsessiontoremotehost"
+          )
+            return "AWS-StartPortForwardingSessionToRemoteHost is the default; leave the tunnel document blank.";
+          if (
+            [
+              "SSM-SessionManagerRunShell",
+              "AWS-StartPortForwardingSession",
+              "AWS-StartSSHSession",
+              "AWS-StartNonInteractiveCommand",
+              "AWS-StartInteractiveCommand",
+            ].some((d) => d.toLowerCase() === name.toLowerCase())
+          )
+            return `${name} is not a remote-host port forwarding document; leave the field blank or use a copy of AWS-StartPortForwardingSessionToRemoteHost.`;
+          if (arn && (arn[1] !== c.partition || arn[2] !== c.relayRegion))
+            return "Tunnel document ARN must be in the bookmark's partition and relay region.";
         }
         if (c.kind === "db") {
           if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(c.endpoint))
@@ -2368,9 +2399,7 @@
           c.account +
           " | " +
           esc(c.region) +
-          (c.kind === "ec2" && c.document
-            ? " | document " + esc(c.document)
-            : "")
+          (c.document ? " | document " + esc(c.document) : "")
         );
       }
       function section(title, rows) {
@@ -2432,6 +2461,11 @@
           ["DB region", c.region],
           ["Relay", c.relay],
           ["SSM region", c.relayRegion],
+          [
+            "Document",
+            c.document ||
+              "AWS-StartPortForwardingSessionToRemoteHost (default)",
+          ],
           ["Local route", routeHost(c) + ":" + c.localPort],
           [
             "Login",

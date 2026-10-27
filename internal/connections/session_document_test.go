@@ -69,11 +69,6 @@ func TestValidateSessionDocument(t *testing.T) {
 			t.Fatalf("%q: want %q, got %v", doc, want, err)
 		}
 	}
-	c := db()
-	c.DocumentName = "Example-ShellDocument"
-	if err := Validate(c); err == nil || err.Error() != "session documents apply only to EC2 bookmarks" {
-		t.Fatalf("database bookmark accepted a session document: %v", err)
-	}
 }
 
 func TestResourceKeySessionDocument(t *testing.T) {
@@ -112,11 +107,6 @@ func TestSchemaAcceptsLegacyAndDocumentFiles(t *testing.T) {
 	}
 	if _, err := decode(jsonDoc(t, shellBookmark(exampleDocumentARN))); err != nil {
 		t.Fatalf("document file rejected: %v", err)
-	}
-	c := db()
-	c.DocumentName = "Example-ShellDocument"
-	if _, err := decode(jsonDoc(t, c)); err == nil {
-		t.Fatal("database record with a session document accepted")
 	}
 }
 

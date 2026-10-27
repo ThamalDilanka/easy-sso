@@ -1,9 +1,11 @@
 package sessions
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 )
@@ -47,4 +49,46 @@ func TestAccessDeniedNamesSessionDocument(t *testing.T) {
 			t.Fatalf("document %q: %s", document, got)
 		}
 	}
+}
+
+func TestArgumentsTunnelDocument(t *testing.T) {
+	tunnel, _, _, _ := fixture(t)
+	tunnel.DocumentName = "Example-TunnelDocument"
+	got := strings.Join(arguments(domain.Run{ID: runID(), Connection: tunnel}), " ")
+	if strings.Count(got, "--document-name") != 1 || !strings.Contains(got, "--document-name Example-TunnelDocument --parameters") {
+		t.Fatalf("tunnel document not passed: %s", got)
+	}
+}
+
+func TestTunnelAccessDeniedNamesDocument(t *testing.T) {
+	for document, want := range map[string]string{"Example-TunnelDocument": "the Example-TunnelDocument document", "": "the AWS-StartPortForwardingSessionToRemoteHost document"} {
+		d := &startupDiagnostic{document: document}
+		_, _ = d.Write([]byte("An error occurred (AccessDeniedException) when calling StartSession"))
+		if got := d.tunnelFailure(); !strings.Contains(got, want) {
+			t.Fatalf("document %q: %s", document, got)
+		}
+	}
+}
+
+func TestDeniedTunnelNamesItsDocument(t *testing.T) {
+	c, role, snapshot, cli := fixture(t)
+	c.DocumentName = "Example-TunnelDocument"
+	probe := func(int, domain.Child) (bool, error) { return true, nil }
+	m, err := NewWithOptions(deniedCLI{cli}, t.TempDir(), "/fake/easysso", &bookmarks{}, Options{Attempts: 3, Interval: time.Millisecond, Probe: probe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Shutdown(context.Background()) })
+	_, _ = m.Open(context.Background(), c, role, snapshot)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if runs := m.List(); len(runs) == 1 && strings.Contains(runs[0].Error, "Access denied") {
+			if !strings.Contains(runs[0].Error, "the Example-TunnelDocument document") {
+				t.Fatalf("denied tunnel did not name its document: %s", runs[0].Error)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("tunnel never reported access denied: %+v", m.List())
 }

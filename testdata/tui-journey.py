@@ -26,7 +26,7 @@ def send(text):os.write(master,text.encode());time.sleep(.08)
 def open_tunnel():
     send('2');send('n');send('p');send('app-db\r');send('db.example.rds.amazonaws.com\r');send('\x15eu-west-1\r');send('\r');send('i-0123456789abcdef0\r');send('\r')
     probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
-    send('\x15'+str(port)+'\r');send('\x15tunnel\r');send('\r');send('\r');send('\r');wait('Review connection');send('\r');wait('Tunnel open')
+    send('\x15'+str(port)+'\r');send('\x15tunnel\r');send('\r');send('\r');send('\r');send('\r');wait('Review connection');send('\r');wait('Tunnel open')
     return port
 def drain(seconds):
     global output

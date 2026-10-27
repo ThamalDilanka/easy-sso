@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/charmbracelet/x/ansi"
@@ -163,10 +164,13 @@ func databaseLoginGuidance() []string {
 }
 
 func documentLabel(c domain.Connection) string {
-	if c.DocumentName == "" {
-		return "Default (Session Manager preferences)"
+	if c.DocumentName != "" {
+		return c.DocumentName
 	}
-	return c.DocumentName
+	if c.Kind == "db" {
+		return connections.DefaultTunnelDocument + " (default)"
+	}
+	return "Default (Session Manager preferences)"
 }
 
 func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewing bool) []string {
@@ -174,7 +178,7 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 	if c.Kind == "ec2" {
 		fields = append(fields, [2]string{"Instance", c.InstanceID}, [2]string{"Region", c.Region}, [2]string{"Document", documentLabel(c)})
 	} else {
-		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Local route", localRoute(c)})
+		fields = append(fields, [2]string{"DB endpoint", fmt.Sprintf("%s:%d", c.Endpoint, c.DBPort)}, [2]string{"Engine", engineLabel(c)}, [2]string{"DB region", c.Region}, [2]string{"Relay", c.RelayInstanceID}, [2]string{"SSM region", c.RelayRegion}, [2]string{"Document", documentLabel(c)}, [2]string{"Local route", localRoute(c)})
 		if c.IAMDatabase() {
 			fields = append(fields, [2]string{"Login", "PostgreSQL IAM"}, [2]string{"Database", c.Database}, [2]string{"DB user", c.DBUser})
 		} else if c.DocDBIAM() {

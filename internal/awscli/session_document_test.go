@@ -15,6 +15,8 @@ func TestStartSessionDocumentAllowlist(t *testing.T) {
 		with("--document-name", "Example-ShellDocument"),
 		with("--document-name", "arn:aws:ssm:us-east-1:111122223333:document/Example-ShellDocument"),
 		with("--document-name", "AWS-StartPortForwardingSessionToRemoteHost", "--parameters", parameters),
+		with("--document-name", "Example-TunnelDocument", "--parameters", parameters),
+		with("--document-name", "arn:aws:ssm:us-east-1:111122223333:document/Example-TunnelDocument", "--parameters", parameters),
 	} {
 		child, err := c.Start(context.Background(), snapshot(), args, nil, nil, nil)
 		if err != nil {
@@ -23,7 +25,10 @@ func TestStartSessionDocumentAllowlist(t *testing.T) {
 		_ = child.Wait()
 	}
 	for _, args := range [][]string{
-		with("--document-name", "Example-ShellDocument", "--parameters", parameters),
+		with("--document-name", "SSM-SessionManagerRunShell", "--parameters", parameters),
+		with("--document-name", "AWS-StartSSHSession", "--parameters", parameters),
+		with("--document-name", "arn:aws:ssm:eu-west-1:111122223333:document/Example-TunnelDocument", "--parameters", parameters),
+		with("--parameters", parameters),
 		with("--document-name", "AWS-StartSSHSession"),
 		with("--document-name", "aws-startportforwardingsession"),
 		with("--document-name", "arn:aws:ssm:eu-west-1:111122223333:document/Example-ShellDocument"),

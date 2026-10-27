@@ -388,7 +388,11 @@ func (d *startupDiagnostic) tunnelFailure() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.denied {
-		return "Access denied: the selected profile cannot start this database tunnel. Check ssm:StartSession access to the relay and the AWS-StartPortForwardingSessionToRemoteHost document, or select an authorized profile. Database login was not attempted."
+		document := d.document
+		if document == "" {
+			document = connections.DefaultTunnelDocument
+		}
+		return "Access denied: the selected profile cannot start this database tunnel. Check ssm:StartSession access to the relay and the " + document + " document, or select an authorized profile. Database login was not attempted."
 	}
 	return ""
 }

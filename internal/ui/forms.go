@@ -256,6 +256,7 @@ func readDatabaseForm(f *form, accountID string, c *domain.Connection) string {
 	c.LocalPort, _ = strconv.Atoi(f.get("localPort"))
 	c.DBAccountID = accountID
 	c.AuthMode, c.Database, c.CAFile = f.get("auth"), f.get("database"), f.get("ca")
+	c.DocumentName = f.get("document")
 	if c.AuthMode == "tunnel" {
 		c.AuthMode = ""
 	}
@@ -313,6 +314,7 @@ func ValidatePort(value string) (int, error) {
 
 // databaseFields builds the form for engine. Both engines share the first
 // seven fields in the same order; only the login fields after them differ.
+// The optional tunnel document is last in both.
 func databaseFields(engine string, c domain.Connection) []field {
 	mode := c.AuthMode
 	if mode == "" {
@@ -331,11 +333,13 @@ func databaseFields(engine string, c domain.Connection) []field {
 		{label: "Relay / SSM region", value: c.RelayRegion, id: "relayRegion"},
 		{label: "Local port", value: strconv.Itoa(c.LocalPort), id: "localPort"},
 	}
+	document := field{label: "Tunnel document (optional)", value: c.DocumentName, id: "document"}
 	if engine == engDocumentDB {
 		return append(fields,
 			field{label: "Auth (tunnel / docdb-iam)", value: mode, id: "auth"},
 			field{label: "Database (optional, IAM)", value: c.Database, id: "database"},
 			field{label: "CA file (blank: automatic)", value: c.CAFile, id: "ca"},
+			document,
 		)
 	}
 	return append(fields,
@@ -343,6 +347,7 @@ func databaseFields(engine string, c domain.Connection) []field {
 		field{label: "Database name (IAM)", value: c.Database, id: "database"},
 		field{label: "Database username (IAM)", value: c.DBUser, id: "dbUser"},
 		field{label: "RDS CA file (blank: automatic)", value: c.CAFile, id: "ca"},
+		document,
 	)
 }
 

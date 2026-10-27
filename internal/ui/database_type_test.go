@@ -164,10 +164,10 @@ func TestDocumentDBFormFields(t *testing.T) {
 	key(f.m, "n")
 	key(f.m, "d")
 	form := f.m.form
-	if form == nil || len(form.fields) != 10 {
+	if form == nil || len(form.fields) != 11 {
 		t.Fatalf("DocumentDB form %+v", form)
 	}
-	if got := strings.Join(fieldIDs(form), ","); got != "name,endpoint,region,dbPort,relay,relayRegion,localPort,auth,database,ca" {
+	if got := strings.Join(fieldIDs(form), ","); got != "name,endpoint,region,dbPort,relay,relayRegion,localPort,auth,database,ca,document" {
 		t.Fatalf("DocumentDB field ids %s", got)
 	}
 	got := []string{form.get("dbPort"), form.get("localPort"), form.get("auth")}
@@ -186,7 +186,7 @@ func TestDocumentDBFormFields(t *testing.T) {
 	if labels["endpoint"] != "Cluster endpoint (host)" || labels["auth"] != "Auth (tunnel / docdb-iam)" || labels["database"] != "Database (optional, IAM)" {
 		t.Fatalf("DocumentDB labels %v", labels)
 	}
-	fill(f.m, "documents", docdbHost, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "docdb-iam", "app_db", "")
+	fill(f.m, "documents", docdbHost, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "docdb-iam", "app_db", "", "")
 	r := f.m.review
 	if r == nil || r.kind != "connection" || f.m.form != nil {
 		t.Fatalf("submit: status %q review %+v", f.m.status, r)
@@ -195,13 +195,13 @@ func TestDocumentDBFormFields(t *testing.T) {
 		t.Fatalf("submitted connection %+v", c)
 	}
 
-	// The PostgreSQL form keeps all eleven fields and its defaults.
+	// The PostgreSQL form keeps all twelve fields and its defaults.
 	f = setupUI(t)
 	f.m.screen = databases
 	key(f.m, "n")
 	key(f.m, "p")
 	form = f.m.form
-	if got := strings.Join(fieldIDs(form), ","); got != "name,endpoint,region,dbPort,relay,relayRegion,localPort,auth,database,dbUser,ca" {
+	if got := strings.Join(fieldIDs(form), ","); got != "name,endpoint,region,dbPort,relay,relayRegion,localPort,auth,database,dbUser,ca,document" {
 		t.Fatalf("PostgreSQL field ids %s", got)
 	}
 	if got := []string{form.get("dbPort"), form.get("localPort"), form.get("auth")}; strings.Join(got, ",") != "5432,15432,postgres-iam" {
@@ -216,7 +216,7 @@ func TestFormsRefuseTheOtherEngine(t *testing.T) {
 	f.m.screen = databases
 	key(f.m, "n")
 	key(f.m, "d")
-	fill(f.m, "documents", "db.example.rds.amazonaws.com", "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "tunnel", "", "")
+	fill(f.m, "documents", "db.example.rds.amazonaws.com", "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "tunnel", "", "", "")
 	if f.m.status != docdbWant || f.m.review != nil || f.m.form == nil {
 		t.Fatalf("DocumentDB form status %q review %v", f.m.status, f.m.review)
 	}
@@ -225,7 +225,7 @@ func TestFormsRefuseTheOtherEngine(t *testing.T) {
 	f.m.screen = databases
 	key(f.m, "n")
 	key(f.m, "p")
-	fill(f.m, "documents", docdbHost, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "tunnel", "", "", "")
+	fill(f.m, "documents", docdbHost, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "tunnel", "", "", "", "")
 	if f.m.status != postgresWant || f.m.review != nil || f.m.form == nil {
 		t.Fatalf("PostgreSQL form status %q review %v", f.m.status, f.m.review)
 	}
@@ -309,7 +309,7 @@ func TestEditDerivesEngineFromBookmark(t *testing.T) {
 	// An RDS bookmark edits in the PostgreSQL form.
 	rds := domain.Connection{ID: "rds", Kind: "db", Name: "app", AccountID: c.AccountID, Partition: c.Partition, Region: "us-east-1", Endpoint: "db.example.rds.amazonaws.com", DBPort: 5432, LocalPort: 15432, RelayInstanceID: c.RelayInstanceID, RelayRegion: "us-east-1"}
 	f.m.editConnection(rds)
-	if f.m.form.engine != engPostgres || len(f.m.form.fields) != 11 || f.m.form.fields[1].label != "Endpoint (host)" {
+	if f.m.form.engine != engPostgres || len(f.m.form.fields) != 12 || f.m.form.fields[1].label != "Endpoint (host)" {
 		t.Fatalf("RDS edit form %+v", f.m.form)
 	}
 }

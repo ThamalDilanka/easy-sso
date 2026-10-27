@@ -215,6 +215,7 @@ const { chromium } = require(
     assert.equal(await field(6).inputValue(), "37017");
     assert.equal(await field(7).inputValue(), "tunnel");
     await has(pane, "Cluster endpoint (host)");
+    await has(pane, "Tunnel document (optional)");
     assert.equal((await pane.innerText()).includes("username"), false);
     await field(7).press("Escape");
     // The PostgreSQL form keeps its defaults and only hints at DocumentDB.
@@ -230,6 +231,7 @@ const { chromium } = require(
     );
     assert.equal(await field(3).inputValue(), "5432");
     assert.equal(await field(7).inputValue(), "postgres-iam");
+    await has(pane, "Tunnel document (optional)");
     await field(7).press("Escape");
 
     // DocumentDB IAM: the IAM guide, a simulated mongosh login with the run's

@@ -328,11 +328,16 @@ func (c *Client) Start(ctx context.Context, s domain.Snapshot, args []string, in
 	return process.Start(cmd)
 }
 
-// Parameters belong only to the fixed database tunnel document. Without them a
-// document must be an EC2 shell document that the bookmark rules accept.
+// Parameters belong only to a database tunnel document: the AWS default or one
+// the tunnel bookmark rules accept. Without them a document must be an EC2
+// shell document that the bookmark rules accept.
 func allowedDocument(document, region string, parameters bool) error {
 	if parameters {
-		if document != "AWS-StartPortForwardingSessionToRemoteHost" {
+		if document == connections.DefaultTunnelDocument {
+			return nil
+		}
+		d, err := connections.ParseTunnelDocument(document)
+		if err != nil || (d.ARN && d.Region != region) {
 			return errors.New("unsupported SSM document")
 		}
 		return nil

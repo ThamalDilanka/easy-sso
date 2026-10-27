@@ -162,10 +162,16 @@ func Validate(c domain.Connection) error {
 			return errors.New("DocumentDB database name may use only letters, digits, _ and -")
 		}
 	}
-	if c.DocumentName != "" {
-		if c.Kind != "ec2" {
-			return errors.New("session documents apply only to EC2 bookmarks")
+	if c.DocumentName != "" && c.Kind == "db" {
+		d, err := ParseTunnelDocument(c.DocumentName)
+		if err != nil {
+			return err
 		}
+		// The tunnel starts in the relay's region, so a shared ARN sits there.
+		if d.ARN && (d.Partition != c.Partition || d.Region != c.RelayRegion) {
+			return errors.New("tunnel document ARN must be in the bookmark's partition and relay region")
+		}
+	} else if c.DocumentName != "" {
 		d, err := ParseSessionDocument(c.DocumentName)
 		if err != nil {
 			return err
@@ -217,6 +223,9 @@ func ResourceKey(c domain.Connection) string {
 	if c.IAMDatabase() || c.DocDBIAM() {
 		login, _ := json.Marshal([]string{c.AuthMode, c.Database, c.DBUser})
 		parts = append(parts, string(login))
+	}
+	if c.DocumentName != "" {
+		parts = append(parts, c.DocumentName)
 	}
 	return strings.Join(parts, "|")
 }
