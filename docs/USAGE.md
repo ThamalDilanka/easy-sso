@@ -367,6 +367,8 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 
 **Fix:** ask your AWS administrator which port-forwarding document your role may use. Press `e` on the bookmark, enter it in **Tunnel document**, and save with Ctrl+S. If the document is already right, the relay instance is the likely cause: ask for `ssm:StartSession` on that instance, or select an authorized profile.
 
+Saving reports `... is not a remote-host port forwarding document`, `... is the default; leave the tunnel document blank` or `tunnel document ARN must be in the bookmark's partition and relay region` when the value cannot work for a tunnel.
+
 ### Tunnel document and Destination do not match
 
 **Symptom:** a tunnel fails with one of these messages, and `Database login was not attempted.`
@@ -377,8 +379,6 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 **Cause:** the document and the bookmark's **Destination** disagree. A fixed-destination document rejects the `host` parameter that `request` sends. A document that takes `host` and `portNumber` rejects the tunnel when `fixed` leaves them out.
 
 **Fix:** press `e`, change **Destination** to the value the message names, and save with Ctrl+S. Access denied takes priority: if you see that message instead, fix the permission first.
-
-Saving reports `... is not a remote-host port forwarding document`, `... is the default; leave the tunnel document blank` or `tunnel document ARN must be in the bookmark's partition and relay region` when the value cannot work for a tunnel.
 
 ### DocumentDB clients
 
