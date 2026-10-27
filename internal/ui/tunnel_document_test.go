@@ -207,3 +207,46 @@ func TestImportPreviewShowsFixedDestination(t *testing.T) {
 		}
 	}
 }
+
+func TestNewFixedDestinationNeedsTunnelDocument(t *testing.T) {
+	const want = "a fixed destination needs a tunnel document"
+	// A new connection never goes through Validate before its review, so the
+	// form itself must refuse a fixed destination without a document.
+	cases := map[string]struct {
+		engine string
+		host   string
+		values []string
+	}{
+		engPostgres:   {engPostgres, "db.example.com", []string{"us-east-1", "5432", "i-0123456789abcdef0", "us-east-1", "15432", "tunnel", "", "", "", "", "fixed"}},
+		engDocumentDB: {engDocumentDB, docdbHost, []string{"us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "tunnel", "", "", "", "fixed"}},
+	}
+	for name, tc := range cases {
+		f := setupUI(t)
+		newDatabaseForm(t, f, tc.engine, tc.host)
+		key(f.m, "enter")
+		fill(f.m, tc.values...)
+		if f.m.form == nil || f.m.review != nil || f.m.status != want {
+			t.Fatalf("%s: form %v review %v status %q", name, f.m.form, f.m.review, f.m.status)
+		}
+	}
+}
+
+func TestUnverifiedDestinationNeedsDocument(t *testing.T) {
+	c := domain.Connection{Kind: "db", FixedDestination: true}
+	if got := unverifiedDestination(c); got != "" {
+		t.Fatalf("note without a document: %q", got)
+	}
+}
+
+func TestRunDetailsShowUnverifiedDestination(t *testing.T) {
+	f := setupUI(t)
+	c := domain.Connection{Kind: "db", Name: "db", Partition: "aws", AccountID: "111111111111", Region: "us-east-1", Endpoint: "db.example.com", DBPort: 5432, LocalPort: 15432, RelayInstanceID: "i-0123456789abcdef0", RelayRegion: "us-east-1", DocumentName: "Example-FixedDocument", FixedDestination: true}
+	const note = "Destination fixed by Example-FixedDocument; easy-sso cannot confirm it is this endpoint. Your client's TLS check can."
+	if got := strings.Join(f.m.runDetails(domain.Run{Connection: c}), "\n"); !strings.Contains(got, note) {
+		t.Fatalf("fixed tunnel-only run lacks the note:\n%s", got)
+	}
+	c.AuthMode, c.Database, c.DBUser = "postgres-iam", "app", "app_user"
+	if got := strings.Join(f.m.runDetails(domain.Run{Connection: c}), "\n"); strings.Contains(got, "cannot confirm it is this endpoint") {
+		t.Fatalf("IAM run shows the note:\n%s", got)
+	}
+}

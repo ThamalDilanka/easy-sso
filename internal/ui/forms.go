@@ -265,6 +265,9 @@ func readDatabaseForm(f *form, accountID string, c *domain.Connection) string {
 	default:
 		return "Choose request or fixed for the destination."
 	}
+	if c.FixedDestination && c.DocumentName == "" {
+		return "a fixed destination needs a tunnel document"
+	}
 	if c.AuthMode == "tunnel" {
 		c.AuthMode = ""
 	}

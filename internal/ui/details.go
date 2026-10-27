@@ -180,7 +180,7 @@ func documentLabel(c domain.Connection) string {
 // easy-sso, decides the endpoint. IAM logins check the endpoint themselves,
 // so only a tunnel-only bookmark gets the note; others get "".
 func unverifiedDestination(c domain.Connection) string {
-	if c.Kind != "db" || !c.FixedDestination || c.IAMDatabase() || c.DocDBIAM() {
+	if c.Kind != "db" || !c.FixedDestination || c.DocumentName == "" || c.IAMDatabase() || c.DocDBIAM() {
 		return ""
 	}
 	return "Destination fixed by " + c.DocumentName + "; easy-sso cannot confirm it is this endpoint. Your client's TLS check can."
@@ -277,6 +277,9 @@ func (m *Model) runDetails(r domain.Run) []string {
 	lines := m.detailSection(title, [][2]string{{"Target", r.Connection.Name}, {"State", runState(r)}, {"Account", r.Profile.AccountID}, {"Profile", r.Profile.Name}, {"Role", r.Profile.Role}, {"Region", r.Connection.Region}, {"Started", humanTimestamp(r.StartedAt)}, {"SSM session", r.SessionID}})
 	if r.Connection.Kind == "db" {
 		lines = append(lines, m.detailSection("ROUTE", [][2]string{{"Local", localRoute(r.Connection)}, {"Remote", fmt.Sprintf("%s:%d", r.Connection.Endpoint, r.Connection.DBPort)}, {"Relay", r.Connection.RelayInstanceID}, {"SSM region", r.Connection.RelayRegion}})...)
+		if note := unverifiedDestination(r.Connection); note != "" {
+			lines = append(lines, "", note)
+		}
 		if r.Connection.IAMDatabase() {
 			lines = append(lines, m.detailRow("Database", r.Connection.Database), m.detailRow("DB user", r.Connection.DBUser), m.detailRow("Local tab", m.runTerminal(r)))
 		} else if r.Connection.DocDBIAM() {
