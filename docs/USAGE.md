@@ -122,6 +122,8 @@ Choose `fixed` when the document should decide the endpoint, not the person who 
 }
 ```
 
+This example is not live-tested. Compare it with AWS's current Session Manager sample policies, which also grant `ssmmessages:OpenDataChannel` on the user's own sessions (`arn:aws:ssm:*:*:session/${aws:userid}-*`).
+
 Releases before 1.6.0 reject a bookmarks file once any bookmark has a fixed destination; set Destination to `request` on every bookmark before you go back to one.
 
 ## PostgreSQL IAM terminals
