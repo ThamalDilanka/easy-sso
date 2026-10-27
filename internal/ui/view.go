@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ThamalDilanka/easy-sso/internal/connections"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/launch"
 	"github.com/charmbracelet/lipgloss"
@@ -518,11 +519,11 @@ func importSummary(c domain.Connection) string {
 	return line
 }
 
-// conflictSummary shows when replacing a local bookmark with the same ID would
-// change its session or tunnel document, including removing it.
+// conflictSummary shows when replacing a local bookmark with the same ID or
+// resource would change its session or tunnel document, including removing it.
 func conflictSummary(c domain.Connection, existing []domain.Connection) string {
 	for _, local := range existing {
-		if local.ID == c.ID && local.Kind == c.Kind && documentLabel(local) != documentLabel(c) {
+		if local.Kind == c.Kind && (local.ID == c.ID || connections.ResourceKey(local) == connections.ResourceKey(c)) && documentLabel(local) != documentLabel(c) {
 			return c.Name + " | " + c.AccountID + " | " + c.Region + " | document " + documentLabel(local) + " -> " + documentLabel(c)
 		}
 	}

@@ -189,9 +189,12 @@ func TestImportPreviewShowsFixedDestination(t *testing.T) {
 	local := domain.Connection{ID: "same", Kind: "db", Name: "existing", AccountID: "111111111111", Region: "us-east-1", DocumentName: "Example-FixedDocument"}
 	imported := local
 	imported.FixedDestination = true
+	// The same resource under another ID is matched by its key, as Preview does.
+	byKey := imported
+	byKey.ID, byKey.Name = "theirs", "renamed"
 	f.conns.plan = domain.ImportPlan{
 		Additions: []domain.Connection{{Kind: "db", Name: "added", AccountID: "111111111111", Region: "eu-west-1", DocumentName: "Example-FixedDocument", FixedDestination: true}},
-		Conflicts: []domain.Connection{imported},
+		Conflicts: []domain.Connection{imported, byKey},
 		Existing:  []domain.Connection{local},
 	}
 	key(f.m, "6")
@@ -200,7 +203,8 @@ func TestImportPreviewShowsFixedDestination(t *testing.T) {
 	lines := strings.Join(f.m.reviewContent(), "\n")
 	for _, want := range []string{
 		"+ added | 111111111111 | eu-west-1 | document Example-FixedDocument (fixed destination)",
-		"document Example-FixedDocument -> Example-FixedDocument (fixed destination)",
+		"existing | 111111111111 | us-east-1 | document Example-FixedDocument -> Example-FixedDocument (fixed destination)",
+		"renamed | 111111111111 | us-east-1 | document Example-FixedDocument -> Example-FixedDocument (fixed destination)",
 	} {
 		if !strings.Contains(lines, want) {
 			t.Fatalf("missing %q:\n%s", want, lines)
