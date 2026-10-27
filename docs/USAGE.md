@@ -77,13 +77,60 @@ Saved EC2 and database connections support **Edit (`e`)** from the list or conne
 
 EC2 bookmarks have an optional **Session document** field. Leave it blank to use the account's Session Manager preferences, as before. Enter a document name such as `Example-ShellDocument`, or the full ARN of a document shared from another account, such as `arn:aws:ssm:us-east-1:111122223333:document/Example-ShellDocument`. An ARN must be in the bookmark's partition and region, because SSM documents are regional. Connect, New window, Reconnect and recovery pass it as `--document-name`. Documents that do not open a shell are refused: `AWS-StartPortForwardingSession`, `AWS-StartPortForwardingSessionToRemoteHost`, `AWS-StartSSHSession` and `AWS-StartNonInteractiveCommand`. easy-sso does not check the document with AWS first, so a misspelled or non-shell custom document fails when the session starts. The same instance with a different document is a separate bookmark. Reviews show the document, and import previews name it so an imported file cannot quietly change which document a shell runs. Releases before 1.2.0 reject a bookmarks file once any bookmark has a session document; files without one stay compatible.
 
-Database bookmarks (PostgreSQL and DocumentDB) have an optional **Tunnel document** field, the last field of the form. Use it when your role may start port forwarding only with your organisation's own document instead of `AWS-StartPortForwardingSessionToRemoteHost`. Leave it blank to use that AWS document, as before. Enter a document name such as `Example-TunnelDocument`, or the full ARN of a shared document in the bookmark's partition and **relay** region, because the tunnel starts in the relay's region. The document must forward a port to a remote host and take the same `host`, `portNumber` and `localPortNumber` parameters; a copy of the AWS document does. easy-sso does not check the document with AWS first, so a misspelled or unsuitable document fails when the tunnel starts. Shell and other non-tunnel AWS documents are refused: `SSM-SessionManagerRunShell`, `AWS-StartPortForwardingSession`, `AWS-StartSSHSession`, `AWS-StartNonInteractiveCommand` and `AWS-StartInteractiveCommand`. Typing the default name is refused too, so it cannot create a second bookmark for the same tunnel. The same database with a different tunnel document is a separate bookmark. Reviews, Details and import previews show the document. Releases before 1.5.0 reject a bookmarks file once any database bookmark has a tunnel document; clear the field on every database bookmark before you go back to one.
+Database bookmarks (PostgreSQL and DocumentDB) have an optional **Tunnel document** field, followed by **Destination (request / fixed)**. Use it when your role may start port forwarding only with your organisation's own document instead of `AWS-StartPortForwardingSessionToRemoteHost`. Leave it blank to use that AWS document, as before. Enter a document name such as `Example-TunnelDocument`, or the full ARN of a shared document in the bookmark's partition and **relay** region, because the tunnel starts in the relay's region. The document must forward a port to a remote host. It has one of two shapes, and **Destination** must match it (see below). easy-sso does not check the document with AWS first, so a misspelled or unsuitable document fails when the tunnel starts. Shell and other non-tunnel AWS documents are refused: `SSM-SessionManagerRunShell`, `AWS-StartPortForwardingSession`, `AWS-StartSSHSession`, `AWS-StartNonInteractiveCommand` and `AWS-StartInteractiveCommand`. Typing the default name is refused too, so it cannot create a second bookmark for the same tunnel. The same database with a different tunnel document is a separate bookmark. Reviews, Details and import previews show the document. Releases before 1.5.0 reject a bookmarks file once any database bookmark has a tunnel document; clear the field on every database bookmark before you go back to one.
+
+**Two document shapes.** Choose the **Destination** value that matches the document:
+
+- **Allowed values (`request`, the default).** The document takes `host`, `portNumber` and `localPortNumber` parameters, like the AWS document, and easy-sso sends all three. Limit `host` and `portNumber` with `allowedValues` so the document can reach only your endpoints. Leave Destination at `request`.
+- **Fixed destination (`fixed`).** The document takes only `localPortNumber`, and the host and port are written into its `properties`. easy-sso sends the local port and nothing else. Set Destination to `fixed`. A fixed destination needs a tunnel document, so a blank document is refused. The value is not case-sensitive, and anything other than `request` or `fixed` is refused.
+
+Choose `fixed` when the document should decide the endpoint, not the person who starts the tunnel. Prefer locked documents like these over granting the default `AWS-StartPortForwardingSessionToRemoteHost`, because the default reaches anything the relay can reach. Details (`v`) and connection review show the document as `Example-FixedDocument (fixed destination)`. An import preview that changes only the Destination still shows `old -> new`.
+
+**Limit: the destination is not verified.** With a fixed destination easy-sso no longer sends the host, so on a tunnel-only bookmark nothing checks that the document forwards to the bookmark's endpoint. Review and Details say so: `Destination fixed by <document>; easy-sso cannot confirm it is this endpoint. Your client's TLS check can.` IAM logins (PostgreSQL IAM and DocumentDB IAM) still check the endpoint through TLS, so they show no note. Use TLS verification in your database client.
+
+**Permissions for a locked document.** Allow `ssm:StartSession` on the relay instance and on each custom document, and require the document check. Add `ssm:TerminateSession` and `ssm:DescribeSessions`, as in the DocumentDB section below:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ec2:us-east-1:111122223333:instance/i-0123456789abcdef0",
+        "arn:aws:ssm:us-east-1:111122223333:document/Example-FixedDocument",
+        "arn:aws:ssm:us-east-1:111122223333:document/Example-TunnelDocument"
+      ],
+      "Condition": {
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ssm:TerminateSession",
+      "Resource": "arn:aws:ssm:*:*:session/${aws:userid}-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ssm:DescribeSessions",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Releases before 1.6.0 reject a bookmarks file once any bookmark has a fixed destination; set Destination to `request` on every bookmark before you go back to one.
 
 ## PostgreSQL IAM terminals
 
 Install `psql` alongside the AWS CLI and Session Manager plugin. PostgreSQL terminals use app-owned PTYs on Linux, WSL, and macOS; native Windows currently supports tunnel-only database access. Select **Set up IAM (l)** on a tunnel-only bookmark, provide the **database name** and **database username**, then save with Ctrl+S and choose Connect terminal (Enter). The full editor (`e`) also exposes the authentication mode. Neither is inferred from the SSO role.
 
 The database must already have IAM authentication enabled, the database user must have `rds_iam` and appropriate SQL grants, and the selected AWS role must allow `rds-db:connect` for that database resource and user. AWS read-only permissions do not determine SQL permissions. The app does not enable IAM authentication or change grants. Tunnel-only success explicitly says database login was not attempted. The Databases view shows the profile bound to an open tunnel, even after another profile is selected. SSM access-denied failures name the relay and the tunnel document in use, and do not imply database login succeeded. See [AWS PostgreSQL IAM prerequisites](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.PostgreSQL.html).
+
+**Memory.** AWS notes: "IAM DB authentication requires compute resources on the database cluster. You must have between 300 and 1000 MiB extra memory on your database for reliable connectivity." On burstable instance classes, AWS advises reducing buffers and cache by the same amount. See [Aurora IAM database authentication](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.IAMDBAuth.html).
 
 **Waiting for IAM setup?** Choose **Edit (e)**, set **Auth** to `tunnel`, and save with Ctrl+S. Enter then opens the tunnel for a database client using an existing database login. **Set up IAM (l)** only saves connection settings; an administrator must configure the RDS setting, database user/grants, and SSO role permission for the exact DB resource ID and username. An authentication rejection lists these checks because the PostgreSQL error does not identify which prerequisite is missing.
 
@@ -280,7 +327,7 @@ The DataGrip URL has no `tls=true`; TLS comes from the SSL tab. Keep **URL only*
 
 **Native Windows** does not start clients; use a `tunnel` bookmark and a DocumentDB password there.
 
-**Security: give DocumentDB logins their own permission set.** The client holds the role keys for its whole life, outside easy-sso's control. A DocumentDB IAM login itself needs no AWS permission: the cluster checks a signed `sts:GetCallerIdentity` request, which works even when a policy denies everything. So ask your administrator for permission sets used only for DocumentDB logins, named by scope and level, for example a read-only and a read-write DocumentDB login set, each mapped in `$external` with matching database roles. easy-sso opens the tunnel with the same role, so each set must allow exactly the Session Manager calls it makes: `ssm:StartSession` on the relay instance and the `AWS-StartPortForwardingSessionToRemoteHost` document (or the bookmark's tunnel document), `ssm:TerminateSession` (you may limit it to the caller's own sessions) and `ssm:DescribeSessions`. Nothing else is needed; `sts:GetCallerIdentity` needs no permission. A plain `Deny *` would still allow the login, but easy-sso could not open the tunnel. If the set also carries broader policies, add an inline statement that denies every action except those three. Keys copied out of a client can then do little more than open a port forward through the relay. This policy has not yet been tested on a live cluster.
+**Security: give DocumentDB logins their own permission set.** The client holds the role keys for its whole life, outside easy-sso's control. A DocumentDB IAM login itself needs no AWS permission: the cluster checks a signed `sts:GetCallerIdentity` request, which works even when a policy denies everything. So ask your administrator for permission sets used only for DocumentDB logins, named by scope and level, for example a read-only and a read-write DocumentDB login set, each mapped in `$external` with matching database roles. easy-sso opens the tunnel with the same role, so each set must allow exactly the Session Manager calls it makes: `ssm:StartSession` on the relay instance and the `AWS-StartPortForwardingSessionToRemoteHost` document (or the bookmark's custom tunnel document, fixed-destination or not; the policy under Tunnel document above shows the shape), `ssm:TerminateSession` (you may limit it to the caller's own sessions) and `ssm:DescribeSessions`. Nothing else is needed; `sts:GetCallerIdentity` needs no permission. A plain `Deny *` would still allow the login, but easy-sso could not open the tunnel. If the set also carries broader policies, add an inline statement that denies every action except those three. Keys copied out of a client can then do little more than open a port forward through the relay. This policy has not yet been tested on a live cluster.
 
 ## Troubleshooting
 
@@ -319,6 +366,17 @@ The same rule applies to the application state folder (`~/.config/easy-sso` on L
 **Cause:** the role's `ssm:StartSession` policy does not allow that relay instance, or does not allow that document. Many organisations allow port forwarding only through their own copy of the AWS document.
 
 **Fix:** ask your AWS administrator which port-forwarding document your role may use. Press `e` on the bookmark, enter it in **Tunnel document**, and save with Ctrl+S. If the document is already right, the relay instance is the likely cause: ask for `ssm:StartSession` on that instance, or select an authorized profile.
+
+### Tunnel document and Destination do not match
+
+**Symptom:** a tunnel fails with one of these messages, and `Database login was not attempted.`
+
+- `The <document> document fixes the destination. Edit the bookmark (e), set Destination to fixed, and save.`
+- `The <document> document needs the host and port. Edit the bookmark (e), set Destination to request, and save.`
+
+**Cause:** the document and the bookmark's **Destination** disagree. A fixed-destination document rejects the `host` parameter that `request` sends. A document that takes `host` and `portNumber` rejects the tunnel when `fixed` leaves them out.
+
+**Fix:** press `e`, change **Destination** to the value the message names, and save with Ctrl+S. Access denied takes priority: if you see that message instead, fix the permission first.
 
 Saving reports `... is not a remote-host port forwarding document`, `... is the default; leave the tunnel document blank` or `tunnel document ARN must be in the bookmark's partition and relay region` when the value cannot work for a tunnel.
 
