@@ -165,12 +165,25 @@ func databaseLoginGuidance() []string {
 
 func documentLabel(c domain.Connection) string {
 	if c.DocumentName != "" {
+		if c.FixedDestination {
+			return c.DocumentName + " (fixed destination)"
+		}
 		return c.DocumentName
 	}
 	if c.Kind == "db" {
 		return connections.DefaultTunnelDocument + " (default)"
 	}
 	return "Default (Session Manager preferences)"
+}
+
+// unverifiedDestination warns that a fixed-destination tunnel document, not
+// easy-sso, decides the endpoint. IAM logins check the endpoint themselves,
+// so only a tunnel-only bookmark gets the note; others get "".
+func unverifiedDestination(c domain.Connection) string {
+	if c.Kind != "db" || !c.FixedDestination || c.IAMDatabase() || c.DocDBIAM() {
+		return ""
+	}
+	return "Destination fixed by " + c.DocumentName + "; easy-sso cannot confirm it is this endpoint. Your client's TLS check can."
 }
 
 func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewing bool) []string {
@@ -193,6 +206,9 @@ func (m *Model) connectionDetails(c domain.Connection, p domain.Profile, reviewi
 		}
 	}
 	lines := m.detailSection("CONNECTION", fields)
+	if note := unverifiedDestination(c); note != "" {
+		lines = append(lines, "", note)
+	}
 	if reviewing {
 		lines = append(lines, "")
 		lines = append(lines, m.detailSection("IDENTITY", [][2]string{{"Account", c.AccountID}, {"Profile", p.Name}, {"Role", p.Role}, {"SSO source", p.SSOSession}, {"Partition", c.Partition}})...)

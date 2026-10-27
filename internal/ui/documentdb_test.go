@@ -109,7 +109,7 @@ func TestDocumentDBSubmitRejectsPostgresIAM(t *testing.T) {
 	f := setupUI(t)
 	newDatabaseForm(t, f, engDocumentDB, docdbHost)
 	key(f.m, "enter")
-	fill(f.m, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "postgres-iam", "", "", "")
+	fill(f.m, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "postgres-iam", "", "", "", "request")
 	if f.m.status != "Choose tunnel or docdb-iam for authentication." || f.m.review != nil || f.m.form == nil {
 		t.Fatalf("submit status %q review %v", f.m.status, f.m.review)
 	}
@@ -118,7 +118,7 @@ func TestDocumentDBSubmitRejectsPostgresIAM(t *testing.T) {
 	f = setupUI(t)
 	newDatabaseForm(t, f, engPostgres, docdbHost)
 	key(f.m, "enter")
-	fill(f.m, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "postgres-iam", "", "", "", "")
+	fill(f.m, "us-east-1", "27017", "i-0123456789abcdef0", "us-east-1", "37017", "postgres-iam", "", "", "", "", "request")
 	if f.m.status != "This is a DocumentDB endpoint. Press Esc, then n, and choose DocumentDB." || f.m.review != nil || f.m.form == nil {
 		t.Fatalf("PostgreSQL form status %q review %v", f.m.status, f.m.review)
 	}

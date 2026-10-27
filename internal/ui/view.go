@@ -513,7 +513,7 @@ func (m *Model) reviewContent() []string {
 func importSummary(c domain.Connection) string {
 	line := c.Name + " | " + c.AccountID + " | " + c.Region
 	if c.DocumentName != "" {
-		line += " | document " + c.DocumentName
+		line += " | document " + documentLabel(c)
 	}
 	return line
 }
@@ -522,7 +522,7 @@ func importSummary(c domain.Connection) string {
 // change its session or tunnel document, including removing it.
 func conflictSummary(c domain.Connection, existing []domain.Connection) string {
 	for _, local := range existing {
-		if local.ID == c.ID && local.Kind == c.Kind && local.DocumentName != c.DocumentName {
+		if local.ID == c.ID && local.Kind == c.Kind && documentLabel(local) != documentLabel(c) {
 			return c.Name + " | " + c.AccountID + " | " + c.Region + " | document " + documentLabel(local) + " -> " + documentLabel(c)
 		}
 	}
