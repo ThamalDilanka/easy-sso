@@ -162,6 +162,9 @@ func Validate(c domain.Connection) error {
 			return errors.New("DocumentDB database name may use only letters, digits, _ and -")
 		}
 	}
+	if c.Kind == "db" && c.FixedDestination && c.DocumentName == "" {
+		return errors.New("a fixed destination needs a tunnel document")
+	}
 	if c.DocumentName != "" && c.Kind == "db" {
 		d, err := ParseTunnelDocument(c.DocumentName)
 		if err != nil {

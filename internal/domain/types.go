@@ -46,27 +46,28 @@ type ManagedRole struct {
 	Unpublished bool `json:"unpublished,omitempty"`
 }
 type Connection struct {
-	ID              string     `json:"id"`
-	Kind            string     `json:"kind"`
-	Name            string     `json:"name"`
-	Partition       string     `json:"partition"`
-	AccountID       string     `json:"accountId"`
-	Region          string     `json:"region"`
-	InstanceID      string     `json:"instanceId,omitempty"`
-	DocumentName    string     `json:"documentName,omitempty"`
-	Endpoint        string     `json:"endpoint,omitempty"`
-	AuthMode        string     `json:"authMode,omitempty"`
-	Database        string     `json:"database,omitempty"`
-	DBUser          string     `json:"dbUser,omitempty"`
-	CAFile          string     `json:"caFile,omitempty"`
-	DBPort          int        `json:"dbPort,omitempty"`
-	LocalPort       int        `json:"localPort,omitempty"`
-	RelayInstanceID string     `json:"relayInstanceId,omitempty"`
-	RelayRegion     string     `json:"relayRegion,omitempty"`
-	DBAccountID     string     `json:"dbAccountId,omitempty"`
-	LastUsedProfile string     `json:"lastUsedProfile,omitempty"`
-	LastUsedRole    string     `json:"lastUsedRole,omitempty"`
-	LastUsedAt      *time.Time `json:"lastUsedAt,omitempty"`
+	ID               string     `json:"id"`
+	Kind             string     `json:"kind"`
+	Name             string     `json:"name"`
+	Partition        string     `json:"partition"`
+	AccountID        string     `json:"accountId"`
+	Region           string     `json:"region"`
+	InstanceID       string     `json:"instanceId,omitempty"`
+	DocumentName     string     `json:"documentName,omitempty"`
+	FixedDestination bool       `json:"fixedDestination,omitempty"`
+	Endpoint         string     `json:"endpoint,omitempty"`
+	AuthMode         string     `json:"authMode,omitempty"`
+	Database         string     `json:"database,omitempty"`
+	DBUser           string     `json:"dbUser,omitempty"`
+	CAFile           string     `json:"caFile,omitempty"`
+	DBPort           int        `json:"dbPort,omitempty"`
+	LocalPort        int        `json:"localPort,omitempty"`
+	RelayInstanceID  string     `json:"relayInstanceId,omitempty"`
+	RelayRegion      string     `json:"relayRegion,omitempty"`
+	DBAccountID      string     `json:"dbAccountId,omitempty"`
+	LastUsedProfile  string     `json:"lastUsedProfile,omitempty"`
+	LastUsedRole     string     `json:"lastUsedRole,omitempty"`
+	LastUsedAt       *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // IAMDatabase identifies the PostgreSQL terminal workflow. Empty auth mode is legacy tunnel-only.

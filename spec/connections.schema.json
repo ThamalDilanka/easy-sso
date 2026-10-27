@@ -72,6 +72,9 @@
           "maxLength": 200,
           "pattern": "^(?:[A-Za-z0-9_.-]{3,128}|arn:aws(?:-cn|-us-gov)?:ssm:[a-z]{2}(?:-[a-z]+)+-[0-9]+:[0-9]{12}:document/[A-Za-z0-9_.-]{3,128})$"
         },
+        "fixedDestination": {
+          "type": "boolean"
+        },
         "endpoint": {
           "type": "string",
           "minLength": 1,
@@ -199,6 +202,11 @@
                   "required": [
                     "caFile"
                   ]
+                },
+                {
+                  "required": [
+                    "fixedDestination"
+                  ]
                 }
               ]
             }
@@ -225,6 +233,18 @@
                 "instanceId"
               ]
             }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "fixedDestination"
+            ]
+          },
+          "then": {
+            "required": [
+              "documentName"
+            ]
           }
         },
         {
