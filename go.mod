@@ -1,6 +1,6 @@
 module github.com/ThamalDilanka/easy-sso
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/atotto/clipboard v0.1.4
@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/muesli/termenv v0.16.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
@@ -35,6 +35,6 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )

@@ -17,6 +17,9 @@ __pycache__/
 # Private names for tools/check-public.py live outside the repository.
 public-denylist*
 
-# Local agent plans, notes and design scratch.
-/.claude/
+# Local agent instructions, plans, notes and design scratch.
+/.claude
+/CLAUDE.md
+/CLAUDE.local.md
+/.superpowers/
 /design/

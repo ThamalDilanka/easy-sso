@@ -4,9 +4,10 @@ VERSION ?= 0.1.0-dev
 COMMIT ?= unreleased
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 GITLEAKS_VERSION ?= v8.30.1
+GOVULNCHECK_VERSION ?= v1.9.0
 TOOLS = bin/tools
 
-.PHONY: build test check fmt crossbuild package demo tools hooks
+.PHONY: build test check vulncheck fmt crossbuild package demo tools hooks
 build:
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o bin/easysso ./cmd/easysso
 demo:
@@ -16,16 +17,22 @@ test:
 	$(PYTHON) -m unittest discover -s tools -p 'test_*.py'
 fmt:
 	gofmt -w cmd internal spec
-check: tools
+check: tools vulncheck
 	@test -z "$$(gofmt -l cmd internal spec)" || { gofmt -l cmd internal spec; exit 1; }
 	$(GO) vet ./...
 	$(GO) mod verify
 	$(PYTHON) tools/check-public.py
 	$(TOOLS)/gitleaks git --redact --no-banner .
-# Pinned scanner in ignored bin/tools; the stamp reinstalls when the pin changes.
-tools: $(TOOLS)/.gitleaks-$(GITLEAKS_VERSION)
+# Reachable known vulnerabilities for every release OS; needs network for the Go vulnerability database.
+vulncheck: tools
+	for os in linux darwin windows; do GOOS=$$os GOARCH=amd64 $(TOOLS)/govulncheck ./... || exit 1; done
+# Pinned scanners in ignored bin/tools; each stamp reinstalls when its pin changes.
+tools: $(TOOLS)/.gitleaks-$(GITLEAKS_VERSION) $(TOOLS)/.govulncheck-$(GOVULNCHECK_VERSION)
 $(TOOLS)/.gitleaks-$(GITLEAKS_VERSION):
 	GOBIN="$(CURDIR)/$(TOOLS)" $(GO) install github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION)
+	touch $@
+$(TOOLS)/.govulncheck-$(GOVULNCHECK_VERSION):
+	GOBIN="$(CURDIR)/$(TOOLS)" $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	touch $@
 hooks: tools
 	git config core.hooksPath tools/hooks

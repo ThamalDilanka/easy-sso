@@ -1,0 +1,24 @@
+# Version updates wait for a cooldown so a freshly published, possibly
+# compromised release is never adopted on day zero. Dependabot security
+# updates are exempt from the cooldown and still open immediately.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      go-modules:
+        patterns: ['*']
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns: ['*']
