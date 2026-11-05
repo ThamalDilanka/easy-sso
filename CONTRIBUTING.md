@@ -1,6 +1,6 @@
 # Contributing to easy-sso
 
-Use Go 1.27.2 or newer, Python 3, and Make. Start with `make build`, `make test`, and `make check`. Tests inject a fake AWS CLI and use private temporary homes; AWS credentials are not required. Linux integration tests drive the real executable through a PTY. Install `psql` to run the local PostgreSQL TLS fixture; that test otherwise skips.
+Use Go 1.27.3 or newer, Python 3, and Make. Start with `make build`, `make test`, and `make check`. Tests inject a fake AWS CLI and use private temporary homes; AWS credentials are not required. Linux integration tests drive the real executable through a PTY. Install `psql` to run the local PostgreSQL TLS fixture; that test otherwise skips.
 
 `make crossbuild` checks compilation for the supported build targets. `make package VERSION=0.1.0 COMMIT=<commit>` creates versioned archives and exact checksums under ignored `bin/release/`, plus candidate channel manifests under `bin/channels/`. Packaging uses only repository documents and built binaries. Cross-compilation does not prove native support.
 
@@ -18,13 +18,21 @@ Use `testdata/aws-config.ini` for profile examples. It deliberately uses reserve
 
 Never commit credentials, SSO cache files, diagnostic dumps, personal paths, company account topology, or real terminal recordings. `make check` scans tracked and new nonignored files for common accidental disclosures, and runs a pinned gitleaks (installed by `make tools` into ignored `bin/tools/`) over the history. This is a focused guard, not a substitute for reviewing the diff and scanning Git history before publication.
 
+`make check` also runs a pinned govulncheck for the Linux, macOS and Windows builds, so it needs network access to the Go vulnerability database. A reachable known vulnerability fails the check; fix it by upgrading the module or Go toolchain.
+
 Run `make hooks` once per clone. The pre-push hook scans only the commits a push would publish, including commit messages, and refuses the push on a finding or when gitleaks is missing.
 
 Company, profile, document and other private names must never be written into the repository, not even into a check. List them, one case-insensitive term per line, in a local file outside the clone: `~/.config/easy-sso-dev/public-denylist`, or set `EASY_SSO_PUBLIC_DENYLIST`. `tools/check-public.py` refuses a denylist inside the repository and reports matches without the term or the file path. A commit author or committer with a GitHub noreply email is a public identity, so its display name is not matched against the denylist; commit messages and file contents always are.
 
 ## Pull requests
 
+`main` accepts changes only through pull requests that pass the `verify` CI check; force-pushes and deletions are refused, and release tags (`v*`) cannot be moved or deleted.
+
 Explain the user-visible behavior, why it changed, and how you verified it. Note any platform or live AWS checks still needed. Use your Git hosting provider's private email setting if you do not want a personal address in public commit metadata.
+
+## Dependencies
+
+Add a dependency only when the standard library or an existing one cannot do the job. Dependabot proposes Go module and GitHub Actions updates weekly, after a three-day cooldown so a freshly published (possibly compromised) version is never adopted on day zero. Security updates skip the cooldown. Apply the same rule to manual upgrades: use a version released at least three days ago unless it fixes a vulnerability. Pin new actions to a full commit SHA with the version in a trailing comment; the repository refuses unpinned or non-GitHub-owned actions.
 
 ## Release changes
 

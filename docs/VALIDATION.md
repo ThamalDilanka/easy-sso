@@ -24,7 +24,7 @@ Before advertising production or platform support, record the OS, architecture, 
 - Native platforms: Windows ACLs and process jobs; WSL distribution/user and browser interop; macOS PTYs and Terminal.app; Linux desktop window launch.
 - Public distribution: archives contain only the intended binary, MIT license, schema, and public documentation; checksums match; no development captures or private fixtures are included.
 
-Automated tests and cross-compilation do not establish live AWS authorization, native terminal behavior, or performance guarantees. The GitHub release workflow creates a draft for inspection before deliberate publication. Release signing/attestations and hosted package-manager repositories remain unconfigured.
+Automated tests and cross-compilation do not establish live AWS authorization, native terminal behavior, or performance guarantees. The GitHub release workflow creates a draft for inspection before deliberate publication. Releases carry build provenance attestations; independent publisher signatures and hosted package-manager repositories remain unconfigured.
 
 ## Distribution validation
 

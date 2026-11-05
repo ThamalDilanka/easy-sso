@@ -6,7 +6,7 @@ See [Distribution](DISTRIBUTION.md) for direct installation, checksum verificati
 
 ## Build and run
 
-Use Go **1.27.2 or newer**, with exact dependency versions and checksums in `go.mod` and `go.sum`.
+Use Go **1.27.3 or newer**, with exact dependency versions and checksums in `go.mod` and `go.sum`.
 
 ```sh
 make build

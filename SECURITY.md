@@ -16,6 +16,14 @@ Connection processes receive frozen temporary credentials through a controlled e
 
 Recovery verifies the saved remote session and original identity; it never kills a process merely because its PID appears in saved metadata. If remote termination cannot be confirmed, the UI reports that separately from local process cleanup.
 
+## Supported versions
+
+Security fixes are released only as a new version of the latest release line. Upgrade to the newest release before reporting; older versions do not receive backported fixes.
+
+## Release integrity
+
+Releases are built by the repository's GitHub Actions release workflow from a tag on `main`, published only after review, and immutable once published. Each archive and `SHA256SUMS` carries a build provenance attestation (from v1.6.1); verify one with `gh attestation verify <archive> --repo ThamalDilanka/easy-sso`. Continuous checks scan for reachable known Go vulnerabilities, leaked secrets and private data.
+
 ## Reporting an issue
 
 Use the repository's private vulnerability reporting feature when available. If it is unavailable, ask the maintainer for a private reporting channel without including sensitive details in a public issue. Share a minimal synthetic reproduction; do not attach real AWS credentials, SSO codes, raw diagnostics, or company connection exports.
