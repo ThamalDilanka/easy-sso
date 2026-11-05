@@ -22,7 +22,7 @@ Security fixes are released only as a new version of the latest release line. Up
 
 ## Release integrity
 
-Releases are built by the repository's GitHub Actions release workflow from a tag on `main`, published only after review, and immutable once published. Each archive and `SHA256SUMS` carries a build provenance attestation (from v1.6.1); verify one with `gh attestation verify <archive> --repo ThamalDilanka/easy-sso`. Continuous checks scan for reachable known Go vulnerabilities, leaked secrets and private data.
+Releases are built by the repository's GitHub Actions release workflow from a tag on `main`, published only after review, and immutable once published. Each archive and `SHA256SUMS` carries a build provenance attestation (from v1.6.2); verify one with `gh attestation verify <archive> --repo ThamalDilanka/easy-sso`. Continuous checks scan for reachable known Go vulnerabilities, leaked secrets and private data.
 
 ## Reporting an issue
 
