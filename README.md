@@ -120,7 +120,7 @@ easysso version
 
 For future terminals, open **Edit environment variables for your account**, edit your user **Path**, and add `%LOCALAPPDATA%\easy-sso`. Open a new terminal afterward.
 
-On every platform, keep **`easy-sso.install.json` beside the executable**, and retain the bundled license and documentation. Extracting the whole archive as above preserves these files. These steps are for a first installation; see [updates](#updates) before replacing an existing copy. Checksums detect corruption but are not an independent publisher signature. From v1.6.1, each asset also has a build provenance attestation: `gh attestation verify <archive> --repo ThamalDilanka/easy-sso`.
+On every platform, keep **`easy-sso.install.json` beside the executable**, and retain the bundled license and documentation. Extracting the whole archive as above preserves these files. These steps are for a first installation; see [updates](#updates) before replacing an existing copy. Checksums detect corruption but are not an independent publisher signature. From v1.6.2, each asset also has a build provenance attestation: `gh attestation verify <archive> --repo ThamalDilanka/easy-sso`.
 
 ## First run
 
