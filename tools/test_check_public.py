@@ -112,6 +112,19 @@ class PrivateDenylistTests(unittest.TestCase):
         self.assertEqual(code, 1, output)
         self.assertWithheld(output)
 
+    def test_dependabot_signoff_on_any_branch_is_public(self):
+        self.repo.git("switch", "-q", "-c", "dependabot/gomod/example")
+        self.repo.git("commit", "-q", "--allow-empty", "-m",
+                      "build(deps): bump example\n\nSigned-off-by: dependabot[bot] <support@github.com>")
+        self.repo.git("switch", "-q", "-")
+        code, output = self.repo.check(self.denylist, "--history")
+        self.assertEqual(code, 0, output)
+        # Built at run time so this file holds no literal private-looking address.
+        self.repo.git("commit", "-q", "--allow-empty", "-m", "docs: ask someone" + "@private.test")
+        code, output = self.repo.check(self.denylist, "--history")
+        self.assertEqual(code, 1, output)
+        self.assertIn("non-example email address", output)
+
 
 if __name__ == "__main__":
     unittest.main()

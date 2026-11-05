@@ -48,8 +48,9 @@ def example_host(host):
 
 def public_email(address):
     host = address.rsplit("@", 1)[1].lower()
+    # GitHub's own service addresses: web-flow merges and Dependabot sign-offs.
     return (example_host(host) or host in ("easy-sso.invalid", "users.noreply.github.com")
-            or address.lower() == "noreply@github.com")
+            or address.lower() in ("noreply@github.com", "support@github.com"))
 
 
 def load_denylist():
