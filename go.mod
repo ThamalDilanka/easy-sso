@@ -1,6 +1,6 @@
 module github.com/ThamalDilanka/easy-sso
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/atotto/clipboard v0.1.4

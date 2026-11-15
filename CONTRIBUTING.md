@@ -1,6 +1,6 @@
 # Contributing to easy-sso
 
-Use Go 1.27.3 or newer, Python 3, and Make. Start with `make build`, `make test`, and `make check`. Tests inject a fake AWS CLI and use private temporary homes; AWS credentials are not required. Linux integration tests drive the real executable through a PTY. Install `psql` to run the local PostgreSQL TLS fixture; that test otherwise skips.
+Use Go 1.27.4 or newer, Python 3, and Make. Start with `make build`, `make test`, and `make check`. Tests inject a fake AWS CLI and use private temporary homes; AWS credentials are not required. Linux integration tests drive the real executable through a PTY. Install `psql` to run the local PostgreSQL TLS fixture; that test otherwise skips.
 
 `make crossbuild` checks compilation for the supported build targets. `make package VERSION=0.1.0 COMMIT=<commit>` creates versioned archives and exact checksums under ignored `bin/release/`, plus candidate channel manifests under `bin/channels/`. Packaging uses only repository documents and built binaries. Cross-compilation does not prove native support.
 

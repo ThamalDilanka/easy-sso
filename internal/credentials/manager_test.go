@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/ThamalDilanka/easy-sso/internal/awscli"
 	"github.com/ThamalDilanka/easy-sso/internal/domain"
 	"github.com/ThamalDilanka/easy-sso/internal/profiles"
 	"github.com/ThamalDilanka/easy-sso/internal/store"
@@ -18,6 +20,9 @@ import (
 type fakeCLI struct {
 	calls                                 []string
 	logoutErr, errorExport, errorIdentity error
+	errorLogin                            error
+	errorExportFor                        map[string]error
+	identity                              *domain.Identity
 	loginHook                             func()
 	logoutHook                            func()
 	expiration                            time.Time
@@ -29,7 +34,7 @@ func (f *fakeCLI) Login(_ context.Context, s string) error {
 	if f.loginHook != nil {
 		f.loginHook()
 	}
-	return nil
+	return f.errorLogin
 }
 func (f *fakeCLI) Export(_ context.Context, p domain.Profile) (domain.Snapshot, error) {
 	f.calls = append(f.calls, "export:"+p.Name)
@@ -37,7 +42,11 @@ func (f *fakeCLI) Export(_ context.Context, p domain.Profile) (domain.Snapshot, 
 	if expiry.IsZero() {
 		expiry = time.Now().Add(time.Hour)
 	}
-	return domain.Snapshot{AccessKeyID: "ASIATEST" + p.Name, SecretAccessKey: "PRIVATESECRET", SessionToken: "PRIVATETOKEN", Expiration: expiry}, f.errorExport
+	err := f.errorExport
+	if e, ok := f.errorExportFor[p.Name]; ok {
+		err = e
+	}
+	return domain.Snapshot{AccessKeyID: "ASIATEST" + p.Name, SecretAccessKey: "PRIVATESECRET", SessionToken: "PRIVATETOKEN", Expiration: expiry}, err
 }
 func (f *fakeCLI) Logout(context.Context) error {
 	f.calls = append(f.calls, "logout")
@@ -49,6 +58,9 @@ func (f *fakeCLI) Logout(context.Context) error {
 func (f *fakeCLI) Identity(_ context.Context, s domain.Snapshot, region string) (domain.Identity, error) {
 	f.calls = append(f.calls, "identity")
 	f.identityRegions = append(f.identityRegions, region)
+	if f.identity != nil {
+		return *f.identity, f.errorIdentity
+	}
 	return domain.Identity{Account: "111122223333", ARN: "arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_ReadOnlyAccess_0123456789abcdef/user"}, f.errorIdentity
 }
 
@@ -194,7 +206,60 @@ func TestFailureStatesAlwaysCleanup(t *testing.T) {
 			if err == nil {
 				t.Fatal("failure accepted")
 			}
+			if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "PRIVATE") {
+				t.Fatal("unreviewed error text leaked", err)
+			}
 			if len(cli.calls) == 0 || cli.calls[len(cli.calls)-1] != "logout" {
+				t.Fatal("cleanup absent", cli.calls)
+			}
+			if _, err = os.Stat(m.credentials); !os.IsNotExist(err) {
+				t.Fatal("failure published")
+			}
+		})
+	}
+}
+func TestActivationFailureNamesProfileAndStage(t *testing.T) {
+	mismatch := domain.Identity{Account: "444455556666", ARN: "arn:aws:sts::444455556666:assumed-role/AWSReservedSSO_ReadOnlyAccess_0123456789abcdef/user"}
+	for _, tc := range []struct {
+		name    string
+		arrange func(*fakeCLI)
+		want    []string
+	}{
+		{"sign-in", func(f *fakeCLI) { f.errorLogin = awscli.ErrSSOSignIn }, []string{`profile "one"`, `SSO sign-in for sso-session "root"`, awscli.ErrSSOSignIn.Error()}},
+		{"sign-in timeout", func(f *fakeCLI) {
+			f.errorLogin = fmt.Errorf("AWS CLI request interrupted: %w", context.DeadlineExceeded)
+		}, []string{`profile "one"`, "SSO sign-in", "not completed within 10 minutes"}},
+		{"cancelled", func(f *fakeCLI) {
+			f.errorExport = fmt.Errorf("AWS CLI request interrupted: %w", context.Canceled)
+		}, []string{`profile "one"`, "credential export: cancelled"}},
+		{"incomplete export", func(f *fakeCLI) { f.errorExport = awscli.ErrCredentialsIncomplete }, []string{`profile "one"`, "credential export", "incomplete or invalid temporary credentials"}},
+		{"not assigned", func(f *fakeCLI) { f.errorExportFor = map[string]error{"two": awscli.ErrAccessDenied} }, []string{`profile "two"`, "credential export", awscli.ErrAccessDenied.Error()}},
+		{"wrapped safe error", func(f *fakeCLI) { f.errorExport = fmt.Errorf("PRIVATE %w", awscli.ErrAccessDenied) }, []string{`profile "one"`, "credential export", awscli.ErrAccessDenied.Error()}},
+		{"unknown export error", func(f *fakeCLI) { f.errorExport = errors.New("secret") }, []string{`profile "one"`, "at credential export;"}},
+		{"expired export", func(f *fakeCLI) { f.expiration = time.Now().Add(-time.Hour) }, []string{`profile "one"`, "credential export", "already expired", "system clock"}},
+		{"clock skew", func(f *fakeCLI) { f.errorIdentity = awscli.ErrClockSkew }, []string{`profile "one"`, "identity check", "wsl --shutdown"}},
+		{"unknown identity error", func(f *fakeCLI) { f.errorIdentity = errors.New("PRIVATEDETAIL") }, []string{`profile "one"`, "at identity check;"}},
+		{"identity mismatch", func(f *fakeCLI) { f.identity = &mismatch }, []string{`profile "one"`, "identity check", "does not match"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, cli, selected := setup(t)
+			tc.arrange(cli)
+			_, err := m.Activate(context.Background(), selected, true)
+			if err == nil {
+				t.Fatal("failure accepted")
+			}
+			msg := err.Error()
+			for _, want := range append(tc.want, "role activation failed for ", "; AWS CLI SSO cleanup complete; no new credentials published") {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("%q lacks %q", msg, want)
+				}
+			}
+			for _, leak := range []string{"secret", "PRIVATE", "ASIATEST", "444455556666"} {
+				if strings.Contains(msg, leak) {
+					t.Fatalf("%q leaks %q", msg, leak)
+				}
+			}
+			if cli.calls[len(cli.calls)-1] != "logout" {
 				t.Fatal("cleanup absent", cli.calls)
 			}
 			if _, err = os.Stat(m.credentials); !os.IsNotExist(err) {
