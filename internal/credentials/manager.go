@@ -280,6 +280,31 @@ func (m *Manager) Snapshot(alias string) (domain.ManagedRole, domain.Snapshot, e
 	}
 	return domain.ManagedRole{}, domain.Snapshot{}, errors.New("Activate this role before connecting")
 }
+
+// activationFailure names the profile and step that failed. detail must be
+// reviewed text: see failureDetail.
+func activationFailure(profile, stage, detail string) error {
+	message := fmt.Sprintf("role activation failed for profile %q at %s", profile, stage)
+	if detail != "" {
+		message += ": " + detail
+	}
+	return errors.New(message + "; AWS CLI SSO cleanup complete; no new credentials published")
+}
+
+// failureDetail returns only text known to be safe to show. CLI errors of
+// any other type may carry subprocess output, so they add no detail.
+func failureDetail(err error) string {
+	var safe *awscli.SafeError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "the AWS CLI timed out"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.As(err, &safe):
+		return safe.Error()
+	}
+	return ""
+}
 func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, ack bool) ([]domain.ManagedRole, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -382,7 +407,12 @@ func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, a
 	for _, sel := range selections {
 		if !logged[sel.Profile.SSOSession] {
 			logged[sel.Profile.SSOSession] = true
-			if failure = m.cli.Login(ctx, sel.Profile.SSOSession); failure != nil {
+			if e := m.cli.Login(ctx, sel.Profile.SSOSession); e != nil {
+				detail := failureDetail(e)
+				if errors.Is(e, context.DeadlineExceeded) {
+					detail = "sign-in was not completed within 10 minutes"
+				}
+				failure = activationFailure(sel.Profile.Name, fmt.Sprintf("SSO sign-in for sso-session %q", sel.Profile.SSOSession), detail)
 				break
 			}
 		}
@@ -394,15 +424,25 @@ func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, a
 				e = awscli.ValidateSnapshot(snap)
 			}
 			if e != nil {
-				failure = e
+				detail := failureDetail(e)
+				switch {
+				// Fresh role credentials last at least an hour, so already
+				// expired ones point to a wrong local clock.
+				case errors.Is(e, awscli.ErrCredentialsExpired):
+					detail = "the exported credentials are already expired; check that the system clock is correct (on WSL run wsl --shutdown from Windows)"
+				case errors.Is(e, awscli.ErrCredentialsIncomplete), errors.Is(e, awscli.ErrCredentialsInvalid):
+					detail = "the AWS CLI returned incomplete or invalid temporary credentials"
+				}
+				failure = activationFailure(sel.Profile.Name, "credential export", detail)
 				break
 			}
 			id, e := m.cli.Identity(ctx, snap, sel.Profile.Region)
-			if e == nil {
-				e = profiles.ValidateIdentity(sel.Profile, id)
-			}
 			if e != nil {
-				failure = e
+				failure = activationFailure(sel.Profile.Name, "identity check", failureDetail(e))
+				break
+			}
+			if profiles.ValidateIdentity(sel.Profile, id) != nil {
+				failure = activationFailure(sel.Profile.Name, "identity check", "the signed-in AWS identity does not match this profile's account and role")
 				break
 			}
 			snaps[i] = snap
@@ -418,7 +458,7 @@ func (m *Manager) Activate(ctx context.Context, selections []domain.Selection, a
 		return nil, err
 	}
 	if failure != nil {
-		return nil, errors.New("role activation failed; AWS CLI SSO cleanup complete; no new credentials published")
+		return nil, failure
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

@@ -84,15 +84,15 @@ func (c *Client) DatabaseToken(ctx context.Context, s domain.Snapshot, db domain
 }
 func ValidateSnapshot(s domain.Snapshot) error {
 	if s.AccessKeyID == "" || s.SecretAccessKey == "" || s.SessionToken == "" {
-		return errors.New("Activate this role before connecting: complete temporary credentials required")
+		return ErrCredentialsIncomplete
 	}
 	for _, value := range []string{s.AccessKeyID, s.SecretAccessKey, s.SessionToken} {
 		if strings.ContainsAny(value, "\r\n\x00") {
-			return errors.New("invalid temporary credential material")
+			return ErrCredentialsInvalid
 		}
 	}
 	if !s.Expiration.After(time.Now().Add(30 * time.Second)) {
-		return errors.New("Role credentials expired. Activate again to start new connections")
+		return ErrCredentialsExpired
 	}
 	return nil
 }
@@ -218,9 +218,10 @@ func (c *Client) run(ctx context.Context, snapshot *domain.Snapshot, args []stri
 		return nil, errors.New("AWS CLI response exceeded safe output limit")
 	}
 	// Errors deliberately omit arbitrary subprocess output: export and plugin
-	// responses may contain access keys, tokens, stream URLs, or authorization codes.
+	// responses may contain access keys, tokens, stream URLs, or authorization
+	// codes. Only a fixed message chosen by matching the error output is returned.
 	if err != nil {
-		return nil, errors.New("AWS CLI request failed; check permissions, network, CLI configuration and SSO sign-in")
+		return nil, classifyFailure(stderr.Bytes(), login)
 	}
 	return out.Bytes(), nil
 }
@@ -253,7 +254,7 @@ func (c *Client) Export(ctx context.Context, p domain.Profile) (domain.Snapshot,
 		Expiration      time.Time
 	}
 	if json.Unmarshal(data, &response) != nil || response.Version != 1 {
-		return s, errors.New("invalid credential export response")
+		return s, &SafeError{"invalid credential export response"}
 	}
 	s = domain.Snapshot{AccessKeyID: response.AccessKeyId, SecretAccessKey: response.SecretAccessKey, SessionToken: response.SessionToken, Expiration: response.Expiration}
 	if err = ValidateSnapshot(s); err != nil {
@@ -271,7 +272,7 @@ func (c *Client) Identity(ctx context.Context, s domain.Snapshot, region string)
 		return id, err
 	}
 	if json.Unmarshal(data, &id) != nil || id.Account == "" || id.ARN == "" {
-		return domain.Identity{}, errors.New("invalid STS identity response")
+		return domain.Identity{}, &SafeError{"invalid STS identity response"}
 	}
 	return id, nil
 }
